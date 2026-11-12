@@ -68,6 +68,15 @@ func SlotProtocol(slot string) (string, error) {
 	return protocol, nil
 }
 
+// SlotKind returns the record kind a slot is filed under.
+func SlotKind(slot string) (string, error) {
+	if err := validateSlot(slot); err != nil {
+		return "", err
+	}
+	parts := strings.Split(slot, "/")
+	return parts[1], nil
+}
+
 // SlotOf returns the slot for a record, from the record's own identity fields.
 func SlotOf(r *Record) (string, error) {
 	return Slot(r.Protocol, r.Kind, r.Unit, r.Subject, r.SpecContext)

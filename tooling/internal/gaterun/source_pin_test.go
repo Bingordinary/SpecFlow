@@ -98,7 +98,7 @@ acceptance_item_set:
 	if !foundSource {
 		t.Fatalf("item judgment does not pin its source block: %+v", record.Dependencies)
 	}
-	if err := judgments.Check(root, ref, TargetCandidate, run.Protocol); err != nil {
+	if err := judgments.Check(root, ref, TargetCandidate); err != nil {
 		t.Fatalf("fresh item judgment rejected: %v", err)
 	}
 
@@ -115,7 +115,7 @@ acceptance_item_set:
 	if err := os.WriteFile(absSpec, []byte(otherEdited), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := judgments.Check(root, ref, TargetCandidate, run.Protocol); err != nil {
+	if err := judgments.Check(root, ref, TargetCandidate); err != nil {
 		t.Fatalf("an edit outside the item source must not invalidate the item: %v", err)
 	}
 
@@ -127,7 +127,7 @@ acceptance_item_set:
 	if err := os.WriteFile(absSpec, []byte(sourceEdited), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := judgments.Check(root, ref, TargetCandidate, run.Protocol); err == nil {
+	if err := judgments.Check(root, ref, TargetCandidate); err == nil {
 		t.Fatal("an edit inside the item source block must invalidate the item")
 	}
 }

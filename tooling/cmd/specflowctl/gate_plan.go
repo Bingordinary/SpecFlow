@@ -47,7 +47,7 @@ func runGatePlan(args []string, stdout, stderr io.Writer) error {
 		return nil
 	})
 	rerunPtr := repeatedString{}
-	fs.Var(&rerunPtr, "rerun", "delta runs only: force a check key into the re-run set (repeatable)")
+	fs.Var(&rerunPtr, "rerun", "delta runs only: force a check key into the re-run set (repeatable; an explicit unit-scan key re-judges the whole row catalog)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

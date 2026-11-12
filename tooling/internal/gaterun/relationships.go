@@ -81,8 +81,10 @@ func planFullRunCarry(repoRoot string, run *Run) ([]string, []string, error) {
 	// A relationship conclusion is judged by the final-synthesis standard. If
 	// that standard moved, the baseline's standing relationships must re-check
 	// even on a full run: the local results they consume are rebuilt, but the
-	// synthesis rules that produced the verdict are not the current ones.
-	if run.Gate == GateValidate && run.TargetKind == TargetKindUnit && len(state.Relationships) > 0 {
+	// synthesis rules that produced the verdict are not the current ones. The
+	// final synthesis is the one conclusion with no judgment record, so its
+	// standard is the cache's `standards.cross` entry.
+	if run.TargetKind == TargetKindUnit && hasRecordedSynthesis(state) {
 		recorded, recordedOK := baseline.Standards[CrossKey]
 		current, currentOK := run.Standards[CrossKey]
 		if !recordedOK || !currentOK || recorded != current {
@@ -90,7 +92,8 @@ func planFullRunCarry(repoRoot string, run *Run) ([]string, []string, error) {
 				run.Relationships = appendUnique(run.Relationships, name)
 			}
 			run.Relationships = dedupeSorted(run.Relationships)
-			notices = append(notices, "the final-synthesis judging standard moved — the standing relationship conclusions re-run")
+			run.SynthesisRerun = true
+			notices = append(notices, "the final-synthesis judging standard moved — the synthesis re-runs over the carried local results")
 			return nil, notices, nil
 		}
 	}
@@ -145,4 +148,59 @@ func planFullRunCarry(repoRoot string, run *Run) ([]string, []string, error) {
 	run.Relationships = dedupeSorted(run.Relationships)
 	notices = append(notices, "the unit changed — the standing relationship conclusions re-run: "+strings.Join(candidates, ", "))
 	return nil, notices, nil
+}
+
+// hasRecordedSynthesis reports whether a baseline carries a final-synthesis
+// conclusion: recorded relationship verdicts, a recorded `cross` status (a
+// synthesis that disposed findings without an assigned relationship), or a
+// retained cross finding. The synthesis has no judgment record, so a cache
+// that carries one binds its standard under `standards.cross`.
+func hasRecordedSynthesis(state JudgmentBaseline) bool {
+	if len(state.Relationships) > 0 || state.LogicalStatus[CrossKey] != "" {
+		return true
+	}
+	for _, finding := range state.Findings {
+		if finding.SourceKey == CrossKey {
+			return true
+		}
+	}
+	return false
+}
+
+// VerifyRelationshipConsumedKinds maps each verify relationship to the
+// coverage-key classes whose re-judgment can change its cross-check verdict.
+// A relationship compares contracts and shared definitions across source
+// parts — the unit-level declaration scan and the code files that carry the
+// definitions — so an acceptance-item-only re-run leaves it sound: the item
+// checks behavior, not the contract structure the relationship compares. A new
+// finding the item raises is still disposed by the synthesis; only the cross
+// item itself carries.
+var VerifyRelationshipConsumedKinds = map[string][]string{
+	"contract_consistency":      {"unit:", "code:", "design:"},
+	"data_definition_drift":     {"unit:", "code:"},
+	"state_machine_coherence":   {"unit:", "code:"},
+	"error_code_conflict":       {"unit:", "code:"},
+	"cross_reference_integrity": {"unit:", "code:", "design:", "item:"},
+}
+
+// RelationshipConsumesChangedKey reports whether the named verify relationship
+// consumes any of the given re-run keys. A relationship whose consumed keys all
+// carried keeps its recorded verdict instead of re-checking over unchanged
+// inputs (framework/verification_scope.md §Incremental relationship work).
+func RelationshipConsumesChangedKey(name string, changed map[string]bool) bool {
+	prefixes, known := VerifyRelationshipConsumedKinds[name]
+	if !known {
+		return true
+	}
+	for key := range changed {
+		if IsRelationshipKey(key) {
+			continue
+		}
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(key, prefix) {
+				return true
+			}
+		}
+	}
+	return false
 }

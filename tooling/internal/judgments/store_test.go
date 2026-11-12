@@ -8,15 +8,17 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/contenthash"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specvalidation"
 )
 
-// testProtocol reads the real deployed judging standard. The record fixture
-// root is a bare temp directory, so Protocol cannot resolve a layout there.
+// testProtocol is the version-only standard a bare fixture root binds: with no
+// SpecFlow layout the deployed fingerprint is the version digest alone, and a
+// record filed under it verifies against the same bare root.
 func testProtocol(t *testing.T) string {
 	t.Helper()
-	return MustProtocol(sourceRepoRoot(t), "verify", "unit")
+	return Digest([]byte(ProtocolSectionVersion))
 }
 
 func fixture(t *testing.T) (string, Record) {
@@ -86,13 +88,13 @@ func TestWholeFileChangeAndTransitiveInvalidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, ref, "candidate", testProtocol(t)); err != nil {
+	if err := Check(root, ref, "candidate"); err != nil {
 		t.Fatal(err)
 	}
 	if err := Invalidate(root, public, "contradicted by new evidence"); err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, ref, "candidate", testProtocol(t)); err == nil {
+	if err := Check(root, ref, "candidate"); err == nil {
 		t.Fatal("dependent PASS remains usable")
 	}
 	root, r = fixture(t)
@@ -106,7 +108,7 @@ func TestWholeFileChangeAndTransitiveInvalidation(t *testing.T) {
 	}
 	f.WriteString("export const order = true;\n")
 	f.Close()
-	if err := Check(root, ref, "candidate", testProtocol(t)); err == nil {
+	if err := Check(root, ref, "candidate"); err == nil {
 		t.Fatal("appended content escaped whole-file identity")
 	}
 }
@@ -161,11 +163,10 @@ func TestStableBindingResolvesPromisePinsInStableScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	protocol := testProtocol(t)
-	if err := Check(root, ref, "stable", protocol); err != nil {
+	if err := Check(root, ref, "stable"); err != nil {
 		t.Fatalf("stable binding must resolve the published stable contract: %v", err)
 	}
-	if err := Check(root, ref, "candidate", protocol); err == nil {
+	if err := Check(root, ref, "candidate"); err == nil {
 		t.Fatal("candidate binding must resolve the candidate contract")
 	}
 }
@@ -213,6 +214,26 @@ func TestInstalledProtocolContentInvalidatesRecords(t *testing.T) {
 			b.WriteString("# Fixture " + name + "\n\n## Judging text\n\n")
 			b.WriteString(judging)
 			b.WriteString("\n\n")
+			if name == "unit_verify_checklist.md" {
+				b.WriteString("## Quality Lens Standard\n\n" + judging + "\n\n")
+				for _, step := range []string{
+					"Step 1 — Structural alignment",
+					"Step 2 — Acceptance alignment",
+					"Step 3 — Scope accuracy",
+					"Step 4 — Retirement verification",
+					"Step 5 — Implementation integrity & surplus detection",
+					"Step 6 — Stub & Placeholder Scan",
+					"Step 7 — First-principles divergence analysis",
+				} {
+					b.WriteString("## " + step + "\n\n" + judging + "\n\n")
+				}
+			}
+			for _, section := range FinalSynthesisSections() {
+				if section.File != name {
+					continue
+				}
+				b.WriteString(strings.Repeat("#", section.Level) + " " + section.Heading + "\n\n" + judging + "\n\n")
+			}
 			for _, section := range MechanismSectionNames(name) {
 				b.WriteString("## " + section + "\n\n" + mechanism + "\n\n")
 			}
@@ -222,25 +243,29 @@ func TestInstalledProtocolContentInvalidatesRecords(t *testing.T) {
 		}
 	}
 	writeStandard("A judgment stands.", "Fixture.")
-	r.Protocol = MustProtocol(root, "verify", "unit")
+	codeProtocol, perr := VerifySessionFingerprint(root, ProtocolSessionCode)
+	if perr != nil {
+		t.Fatal(perr)
+	}
+	r.Protocol = codeProtocol
 	ref, err := Save(root, r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, ref, "candidate", MustProtocol(root, "verify", "unit")); err != nil {
+	if err := Check(root, ref, "candidate"); err != nil {
 		t.Fatal(err)
 	}
 	// A mechanism section describes how a run is planned, recorded or
 	// terminated, not what counts as a pass, a problem, or how severe it is:
 	// changing it must not invalidate a recorded conclusion.
 	writeStandard("A judgment stands.", "Rewritten fixture.")
-	if err := Check(root, ref, "candidate", MustProtocol(root, "verify", "unit")); err != nil {
+	if err := Check(root, ref, "candidate"); err != nil {
 		t.Fatalf("mechanism change invalidated a recorded judgment: %v", err)
 	}
 	// The judging text is the standard the record was made under: changing it
 	// invalidates the record.
 	writeStandard("A judgment changed.", "Rewritten fixture.")
-	if err := Check(root, ref, "candidate", MustProtocol(root, "verify", "unit")); err == nil {
+	if err := Check(root, ref, "candidate"); err == nil {
 		t.Fatal("changed installed protocol reused an old judgment")
 	}
 }
@@ -275,7 +300,7 @@ func TestCurrentItemDecisionChecksCanonicalFindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, prior, "stable", testProtocol(t)); err == nil {
+	if err := Check(root, prior, "stable"); err == nil {
 		t.Fatal("unchanged MISMATCH verdict hid changed blocking severity")
 	}
 	r.SourceRun = "20240101-000000-abcdef"
@@ -284,7 +309,7 @@ func TestCurrentItemDecisionChecksCanonicalFindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, current, "stable", testProtocol(t)); err != nil {
+	if err := Check(root, current, "stable"); err != nil {
 		t.Fatalf("equivalent accepted decision invalidated a consumer: %v", err)
 	}
 	path, err := StoredPath(root, equivalent)
@@ -294,7 +319,7 @@ func TestCurrentItemDecisionChecksCanonicalFindings(t *testing.T) {
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, current, "stable", testProtocol(t)); err == nil {
+	if err := Check(root, current, "stable"); err == nil {
 		t.Fatal("missing current decision resurrected an earlier record")
 	}
 }
@@ -348,7 +373,7 @@ func TestCurrentItemDecisionsRemainSeparateAcrossSpecContexts(t *testing.T) {
 			t.Fatalf("%s lost its own current decision: %+v %v %v", layer, got, accepted, err)
 		}
 	}
-	if err := Check(root, previous, "stable", testProtocol(t)); err == nil {
+	if err := Check(root, previous, "stable"); err == nil {
 		t.Fatal("different candidate context resurrected the old stable ALIGNED record")
 	}
 	path, err := StoredPath(root, stable)
@@ -358,7 +383,7 @@ func TestCurrentItemDecisionsRemainSeparateAcrossSpecContexts(t *testing.T) {
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, previous, "stable", testProtocol(t)); err == nil {
+	if err := Check(root, previous, "stable"); err == nil {
 		t.Fatal("missing stable decision was hidden by the valid candidate decision")
 	}
 }
@@ -395,7 +420,7 @@ func TestBoundStableContextCannotBypassItsCurrentDecision(t *testing.T) {
 	if _, err := Save(root, r); err != nil {
 		t.Fatal(err)
 	}
-	if err := Check(root, previous, "stable", testProtocol(t)); err == nil {
+	if err := Check(root, previous, "stable"); err == nil {
 		t.Fatal("historical context bypassed the current stable decision")
 	}
 }
@@ -481,19 +506,67 @@ func TestVerifyChecksALoadedRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	protocol := testProtocol(t)
 
-	if err := Verify(root, record, ref, "candidate", protocol); err != nil {
+	if err := Verify(root, record, ref, "candidate"); err != nil {
 		t.Fatalf("verify an unchanged record: %v", err)
 	}
 
 	if err := os.WriteFile(filepath.Join(root, "contracts.js"), []byte("export const token = false;\n"), 0o644); err != nil {
 		t.Fatalf("rewrite dependency: %v", err)
 	}
-	if err := Verify(root, record, ref, "candidate", protocol); err == nil {
+	if err := Verify(root, record, ref, "candidate"); err == nil {
 		t.Fatal("a changed dependency must fail verification")
 	}
-	if err := Check(root, ref, "candidate", protocol); err == nil {
+	if err := Check(root, ref, "candidate"); err == nil {
 		t.Fatal("Check must fail the same way Verify does")
+	}
+}
+
+// TestRegionDependenciesNormalizeLineEndings pins the canonical text form of
+// region pins at verification time: the record builder derives a region pin
+// from normalized text, so a CRLF checkout of unchanged content must verify.
+func TestRegionDependenciesNormalizeLineEndings(t *testing.T) {
+	root := t.TempDir()
+	specRef := "unit_auth.md"
+	crlf := "## Promises\r\n\r\npromises:\r\n  - id: auth.core\r\n    summary: Core.\r\n"
+	specPath := filepath.Join(root, specRef)
+	if err := os.WriteFile(specPath, []byte(crlf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := specpaths.FileHash(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dep, ok := contenthash.SpecAnchorDep(specpaths.NormalizeText(crlf), "auth.core")
+	if !ok {
+		t.Fatal("the probe promise region did not resolve")
+	}
+	record := Record{
+		Version:      RecordVersion,
+		Kind:         Unit,
+		Unit:         "auth",
+		Subject:      "_",
+		Coverage:     []string{"unit:auth"},
+		Inputs:       []string{specRef},
+		Dependencies: []Dependency{{Path: specRef, Hash: hash, Deps: []string{dep}}},
+		Rows: []RowPin{{
+			ID:      "decl:promise:auth.core",
+			Kind:    RowKindDeclaration,
+			Verdict: RowMatch,
+			Deps:    []Dependency{{Path: specRef, Deps: []string{dep}}},
+		}},
+		Protocol:     testProtocol(t),
+		Verdict:      "ALIGNED",
+		Result:       json.RawMessage(`{"effective_status":{"unit:auth":"pass"},"verdicts":{"unit:auth":"ALIGNED"}}`),
+		Report:       "fixture scan",
+		ReportDigest: Digest([]byte("fixture scan")),
+		SourceRun:    "20260101-000000-abcdef",
+	}
+	ref, err := Save(root, record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Check(root, ref, "candidate"); err != nil {
+		t.Fatalf("a CRLF checkout of unchanged content must verify: %v", err)
 	}
 }

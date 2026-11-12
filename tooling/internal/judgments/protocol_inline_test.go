@@ -99,3 +99,32 @@ func TestProtocolSectionFingerprintIncludesRenderedText(t *testing.T) {
 		t.Fatal("the body content must be part of the fingerprint")
 	}
 }
+
+// TestProtocolVerifySessionFingerprintResolvesClassSections proves the
+// per-class verify fingerprint mechanism is structurally sound: every session
+// class resolves to a deployed fingerprint, and every section named as a
+// class-owned section exists exactly once in its document. It belongs to the
+// authoritative `go test ./internal/judgments/ -run Protocol` family.
+func TestProtocolVerifySessionFingerprintResolvesClassSections(t *testing.T) {
+	root := sourceRepoRoot(t)
+	for _, kind := range VerifySessionKinds {
+		fingerprint, err := VerifySessionFingerprint(root, kind)
+		if err != nil {
+			t.Fatalf("session class %q: %v", kind, err)
+		}
+		if fingerprint == "" {
+			t.Fatalf("session class %q produced an empty fingerprint", kind)
+		}
+	}
+	for document, refs := range verifyClassSections() {
+		raw, err := os.ReadFile(filepath.Join(root, "framework", filepath.FromSlash(document)))
+		if err != nil {
+			t.Fatalf("read class-section document %q: %v", document, err)
+		}
+		for _, ref := range refs {
+			if _, err := ExtractSection(string(raw), ref.Level, ref.Heading); err != nil {
+				t.Fatalf("%s: class section %q does not resolve: %v", document, ref.Heading, err)
+			}
+		}
+	}
+}

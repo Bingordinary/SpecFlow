@@ -26,7 +26,7 @@ const Directory = "docs/specs/meta/validation/judgments"
 // read surface or judgment steps change: records filed under another protocol
 // are not current and a verify run must recreate them.
 const ProtocolVersion = "verify-8-quality-conclusions-owned-evidence"
-const RecordVersion = 4
+const RecordVersion = 5
 const Code = "code"
 const Design = "design"
 const Architecture = "architecture"
@@ -65,14 +65,21 @@ type Dependency struct {
 }
 
 type Record struct {
-	Version      int             `json:"version"`
-	Kind         string          `json:"kind"`
-	Unit         string          `json:"unit,omitempty"`
-	Subject      string          `json:"subject"`
-	SpecContext  string          `json:"spec_context,omitempty"`
-	Coverage     []string        `json:"coverage"`
-	Inputs       []string        `json:"inputs"`
-	Dependencies []Dependency    `json:"dependencies"`
+	Version      int          `json:"version"`
+	Kind         string       `json:"kind"`
+	Unit         string       `json:"unit,omitempty"`
+	Subject      string       `json:"subject"`
+	SpecContext  string       `json:"spec_context,omitempty"`
+	Coverage     []string     `json:"coverage"`
+	Inputs       []string     `json:"inputs"`
+	Dependencies []Dependency `json:"dependencies"`
+	// Rows is the unit-scan record's checklist bookkeeping: one row per
+	// declaration source, per declared code file's surplus check, and per
+	// non-runnable item, each with its own dependency pins and verdict. A
+	// change invalidates exactly the rows that read it
+	// (framework/validation_cache.md §Unit-scan row bookkeeping). Other
+	// record kinds carry no rows.
+	Rows         []RowPin        `json:"rows,omitempty"`
 	References   []Binding       `json:"references,omitempty"`
 	Protocol     string          `json:"protocol"`
 	Verdict      string          `json:"verdict"`
@@ -169,8 +176,16 @@ func StoredPath(root string, ref Reference) (string, error) {
 	return recordPath(root, ref.Slot, ref.ID)
 }
 func Save(root string, r Record) (Reference, error) {
-	if r.Version != RecordVersion || r.Subject == "" || r.Protocol == "" || len(r.Inputs) == 0 || len(r.Dependencies) == 0 || len(r.Coverage) == 0 || len(r.Result) == 0 || r.SourceRun == "" || r.ReportDigest != Digest([]byte(r.Report)) {
+	if r.Version != RecordVersion || r.Subject == "" || r.Protocol == "" || len(r.Inputs) == 0 || (len(r.Dependencies) == 0 && len(r.Rows) == 0) || len(r.Coverage) == 0 || len(r.Result) == 0 || r.SourceRun == "" || r.ReportDigest != Digest([]byte(r.Report)) {
 		return Reference{}, fmt.Errorf("incomplete judgment record")
+	}
+	if r.Kind == Unit && len(r.Rows) == 0 {
+		return Reference{}, fmt.Errorf("unit-scan judgment carries no row bookkeeping")
+	}
+	for _, row := range r.Rows {
+		if err := row.Validate(); err != nil {
+			return Reference{}, err
+		}
 	}
 	switch r.Kind {
 	case Code, Design, Architecture, Item, Unit:
@@ -378,13 +393,14 @@ func List(root string, kinds ...string) ([]Reference, error) {
 	return records, err
 }
 
-// Current returns the current-decision pointers a reader under protocol can
-// use. A pointer filed under a retired standard is skipped: every reader asks
-// with the deployed standard (see latestItemForContext's callers), so a retired
-// decision can never be read again and must not confer liveness. The walk still
-// parses every pointer, deployed or retired: a damaged pointer is an error,
-// never a skipped entry.
-func Current(root, protocol string) ([]Reference, error) {
+// Current returns the current-decision pointers a reader under the deployed
+// per-kind standards can use. A pointer filed under a retired standard is
+// skipped: every reader asks with the deployed standard of that record kind
+// (see latestItemForContext's callers), so a retired decision can never be
+// read again and must not confer liveness. The walk still parses every
+// pointer, deployed or retired: a damaged pointer is an error, never a skipped
+// entry.
+func Current(root string, deployed map[string]string) ([]Reference, error) {
 	_, currents, err := walkStore(root, kindSet(nil))
 	if err != nil {
 		return nil, err
@@ -395,7 +411,11 @@ func Current(root, protocol string) ([]Reference, error) {
 		if err != nil {
 			return nil, err
 		}
-		if filed == protocol {
+		kind, err := SlotKind(ref.Slot)
+		if err != nil {
+			return nil, err
+		}
+		if wanted, ok := deployed[kind]; ok && filed == wanted {
 			out = append(out, ref)
 		}
 	}
@@ -578,8 +598,8 @@ func ResolveInputPath(root string, d Dependency, unit, layer string) (string, er
 	return ResolveEvidencePath(root, InputPath(d, unit, layer))
 }
 
-func Check(root string, ref Reference, layer, protocol string) error {
-	return check(root, ref, layer, protocol, map[string]bool{}, &promiseLiveness{root: root})
+func Check(root string, ref Reference, layer string) error {
+	return check(root, ref, layer, map[string]bool{}, &promiseLiveness{root: root})
 }
 
 // promiseLiveness resolves promise pins against the binding layer's promise
@@ -623,7 +643,7 @@ func (p *promiseLiveness) verify(id, fingerprint, layer string) error {
 	return nil
 }
 
-func check(root string, ref Reference, layer, protocol string, seen map[string]bool, promises *promiseLiveness) error {
+func check(root string, ref Reference, layer string, seen map[string]bool, promises *promiseLiveness) error {
 	if seen[ref.ID] {
 		return fmt.Errorf("cyclic judgment reference %s", ref.ID)
 	}
@@ -633,7 +653,7 @@ func check(root string, ref Reference, layer, protocol string, seen map[string]b
 	if err != nil {
 		return err
 	}
-	return verifyRecord(root, r, ref, layer, protocol, seen, promises)
+	return verifyRecord(root, r, ref, layer, seen, promises)
 }
 
 // Verify runs the same verification Check runs, for a record the caller has
@@ -642,12 +662,27 @@ func check(root string, ref Reference, layer, protocol string, seen map[string]b
 // pairing. A caller that reads a record to inspect it and then asks whether it
 // is still valid would otherwise read and digest-verify the same file twice in
 // one command.
-func Verify(root string, record *Record, ref Reference, layer, protocol string) error {
+func Verify(root string, record *Record, ref Reference, layer string) error {
 	seen := map[string]bool{ref.ID: true}
-	return verifyRecord(root, record, ref, layer, protocol, seen, &promiseLiveness{root: root})
+	return verifyRecord(root, record, ref, layer, seen, &promiseLiveness{root: root})
 }
 
-func verifyRecord(root string, r *Record, ref Reference, layer, protocol string, seen map[string]bool, promises *promiseLiveness) error {
+// VerifyRecordLevel verifies a record's record-level pins — the invalidation
+// marker, the session-class standard fingerprint, the record's own dependency
+// pins, and its transitive references — without the row bookkeeping. It is the
+// delta planner's carry precondition for a unit-scan record: the record-level
+// pins are not rows, so any one of them failing re-runs the whole conclusion
+// even when every row's pins hold (framework/validation_cache.md §Unit-scan
+// row bookkeeping → Delta scope).
+func VerifyRecordLevel(root string, record *Record, ref Reference, layer string) error {
+	seen := map[string]bool{ref.ID: true}
+	return verifyRecordPins(root, record, ref, layer, seen, &promiseLiveness{root: root})
+}
+
+// verifyRecordPins verifies everything a record pins outside its row
+// bookkeeping: the invalidation marker, the session-class standard, the
+// record's own dependencies, and its referenced records.
+func verifyRecordPins(root string, r *Record, ref Reference, layer string, seen map[string]bool, promises *promiseLiveness) error {
 	p, err := localstate.Path(root, Directory, "invalidated", ref.ID+".json")
 	if err != nil {
 		return err
@@ -657,7 +692,15 @@ func verifyRecord(root string, r *Record, ref Reference, layer, protocol string,
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if r.Protocol != protocol {
+	// The record binds the judging standard of its own session class: a Step
+	// or Quality Lens edit re-runs exactly the classes that apply it, while a
+	// shared-document edit re-runs every class (framework/validation_cache.md
+	// §Standard binding).
+	expected, err := VerifySessionFingerprint(root, sessionKindOfRecord(r.Kind))
+	if err != nil {
+		return err
+	}
+	if r.Protocol != expected {
 		return fmt.Errorf("judgment %s review protocol changed", ref.ID)
 	}
 	for _, d := range r.Dependencies {
@@ -683,7 +726,10 @@ func verifyRecord(root string, r *Record, ref Reference, layer, protocol string,
 				return fmt.Errorf("judgment %s whole-file input changed: %s", ref.ID, canonical)
 			}
 		}
-		if len(d.Deps) > 0 && !contenthash.DepsPresent(string(data), d.Deps) {
+		// Region dependencies are content identities over normalized text:
+		// Compute and check them against the same canonical spelling so a CRLF
+		// checkout of an unchanged spec does not read as a changed region.
+		if len(d.Deps) > 0 && !contenthash.DepsPresent(specpaths.NormalizeText(string(data)), d.Deps) {
 			return fmt.Errorf("judgment %s dependency changed: %s", ref.ID, canonical)
 		}
 	}
@@ -692,8 +738,25 @@ func verifyRecord(root string, r *Record, ref Reference, layer, protocol string,
 		if dep.Layer != "" {
 			bound = dep.Layer
 		}
-		if err := check(root, dep.Reference, bound, protocol, seen, promises); err != nil {
+		if err := check(root, dep.Reference, bound, seen, promises); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func verifyRecord(root string, r *Record, ref Reference, layer string, seen map[string]bool, promises *promiseLiveness) error {
+	if err := verifyRecordPins(root, r, ref, layer, seen, promises); err != nil {
+		return err
+	}
+	for _, row := range r.Rows {
+		if err := row.Validate(); err != nil {
+			return err
+		}
+		for _, d := range row.Deps {
+			if err := checkRowDependency(root, r, d, layer); err != nil {
+				return fmt.Errorf("judgment %s row %s: %w", ref.ID, row.ID, err)
+			}
 		}
 	}
 	if r.Kind == Item {
@@ -729,7 +792,7 @@ func verifyRecord(root string, r *Record, ref Reference, layer, protocol string,
 			if current.Kind != Item || current.Unit != r.Unit || current.Subject != r.Subject || current.SpecContext != context {
 				return fmt.Errorf("accepted item reference does not match judgment %s", ref.ID)
 			}
-			if err := check(root, latest, layer, protocol, seen, promises); err != nil {
+			if err := check(root, latest, layer, seen, promises); err != nil {
 				return fmt.Errorf("current item decision is unavailable: %w", err)
 			}
 			same, err := sameItemDecision(r, current)

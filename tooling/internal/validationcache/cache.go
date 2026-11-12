@@ -121,15 +121,16 @@ type cacheFile struct {
 	// (see framework/validation_cache.md §Format → Standard binding). It is
 	// written on rule validate caches only, which have no partial run; a rule
 	// cache without it cannot prove which standard judged it, so freshness
-	// treats it as invalid. Unit validate uses Standards, and verify caches
-	// bind their standard per judgment record instead.
+	// treats it as invalid. Unit validate uses Standards; a verify cache binds
+	// each judgment record per session class and stores only the final
+	// synthesis's standard under Standards["cross"].
 	Standard string `yaml:"standard,omitempty"`
-	// Standards is the unit validate standard split by session group: one
-	// fingerprint per validate coverage group plus `cross` for the final
-	// synthesis. A group binds the shared judging baseline plus its own check
-	// sections, so a check-section edit invalidates only its group while a
-	// shared-document edit invalidates every group that reads it. Rule validate
-	// has no partial run and keeps the single Standard value.
+	// Standards is the per-conclusion standard binding for conclusions with no
+	// judgment record: a unit validate cache records one fingerprint per
+	// coverage group plus `cross` for the final synthesis; a verify cache
+	// records only `cross`, because the final synthesis is its one conclusion
+	// without a record. Rule validate has no partial run and keeps the single
+	// Standard value.
 	Standards     map[string]string `yaml:"standards,omitempty"`
 	standardsSeen bool              `yaml:"-"`
 	// InvalidatedChecks records the machine-owned recovery state: judgments
@@ -639,13 +640,15 @@ type CacheWrite struct {
 	GateRun string
 	// Standard is the judging standard the cache's conclusions were made
 	// under. Gate-finalize sets it on a rule validate write; freshness compares
-	// it before the cache is reusable. Unit validate writes Standards instead,
-	// and verify writes leave both empty: a verify conclusion binds its
-	// standard per judgment record.
+	// it before the cache is reusable. Unit validate writes Standards instead;
+	// a verify cache writes Standards only for the final synthesis, which has
+	// no judgment record.
 	Standard string
-	// Standards is the unit validate standard split by session group. A unit
-	// validate write records one fingerprint per coverage group and, when the
-	// cache carries a synthesis conclusion, one for the final synthesis.
+	// Standards is the per-conclusion standard binding for conclusions with no
+	// judgment record: a unit validate write records one fingerprint per
+	// coverage group and, when the cache carries a synthesis conclusion, one
+	// for the final synthesis; a verify write records the final synthesis
+	// under `cross` only.
 	Standards map[string]string
 	// InvalidatedChecks carries the machine-owned targeted invalidation
 	// state: the pending re-run set of a salvaged finalize (a full run whose
@@ -2087,8 +2090,23 @@ func parseCache(data []byte) (*cacheFile, error) {
 	if len(cache.Standards) > 0 && cache.Standard != "" {
 		return nil, fmt.Errorf("cache file declares both `standard` and `standards` — one binding format per cache")
 	}
-	if len(cache.Standards) > 0 && cache.Command != "validate" {
-		return nil, fmt.Errorf("cache file declares `standards` on a %q cache — only validate caches bind a judging standard", cache.Command)
+	if len(cache.Standards) > 0 {
+		switch cache.Command {
+		case "validate":
+			// Unit validate binds one standard per coverage group plus the
+			// final synthesis; verifyStandard validates the key set.
+		case "verify":
+			// Verify binds each judgment record to its session class. The
+			// final synthesis has no record, so the cache carries its
+			// standard under the reserved `cross` key.
+			for key := range cache.Standards {
+				if key != validateSynthesisStandardKey {
+					return nil, fmt.Errorf("cache file declares verify standard %q — a verify cache binds only the final-synthesis `cross` standard", key)
+				}
+			}
+		default:
+			return nil, fmt.Errorf("cache file declares `standards` on a %q cache — only validate and verify caches bind a judging standard", cache.Command)
+		}
 	}
 	if cache.invalidatedSeen {
 		// The list is machine-owned recovery state with two writers: a

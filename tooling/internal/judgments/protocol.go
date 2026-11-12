@@ -271,6 +271,16 @@ func MustProtocol(root, gate, targetKind string) string {
 	return protocol
 }
 
+// MustVerifySessionFingerprint is VerifySessionFingerprint for callers that
+// cannot propagate an error.
+func MustVerifySessionFingerprint(root, kind string) string {
+	fingerprint, err := VerifySessionFingerprint(root, kind)
+	if err != nil {
+		panic(err)
+	}
+	return fingerprint
+}
+
 // ExtractSection returns the text of the section opened by the heading whose
 // level and slug match: the title text itself, or the text before the first
 // " — " separator. The section spans from its heading line to the next

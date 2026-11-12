@@ -745,6 +745,21 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 			spec.Context = append(spec.Context, "This is an object-level delta/repair session: judge only the assigned objects. Objects not listed are carried from the baseline and are not part of this mission.")
 		}
 	}
+	if run.Gate == GateVerify && stringInSlice(keys, reviewKey(SessionKindUnit, run.TargetName, "")) {
+		// The assigned row set is always the plan-time catalog: a full run
+		// judges every row, and a row-scoped delta judges only the dead/new
+		// rows. The mission carries the set verbatim so the reviewer never has
+		// to reconstruct the mechanical catalog, and gate-submit can reject a
+		// report whose row set differs before the run reaches finalize.
+		if len(run.ScanCatalog) == 0 {
+			return nil, fmt.Errorf("the unit-scan run records no row catalog — plan a new run with the current tooling")
+		}
+		spec.ScanRows = append([]string(nil), run.ScanCatalog...)
+		if len(run.ScanRows) > 0 {
+			spec.ScanRows = append([]string(nil), run.ScanRows...)
+			spec.ScanRowScoped = true
+		}
+	}
 	for _, ck := range run.Coverage {
 		if !wanted[ck.Key] {
 			continue
@@ -836,7 +851,12 @@ func BuildSessionSpec(repoRoot string, run *Run, keys []string) (*SessionSpec, e
 		}
 	}
 	if kind == SessionKindUnit {
-		spec.Context = append(spec.Context, "Unit-level alignment scan: execute Step 1 (structural alignment) and Step 5 (implementation integrity and code design-surface surplus) over the whole unit — Step 5 covers both the code design-surface surplus analysis (Part A) and the non-runnable assessment (count the acceptance items marked `runnable: no`, check each carries a substantive `not_runnable_reason` with external evidence, and judge whether the remaining runnable set gives meaningful coverage) — Step 2 acceptance alignment, Step 3 scope accuracy and Step 6 are owned by the item sessions, while this session completes Step 7 first-principles divergence analysis for every structural or surplus MISMATCH it retains. Attribute code structures and designs to the responsibility of this unit before judging surplus: shared-file association is not exclusive ownership, independent behavior outside that responsibility is not surplus, and helpers or shared mechanisms implementing or constraining this unit's requirements remain in scope. If attribution evidence is missing from read_refs, report the missing input rather than infer a mismatch from file co-location. Report one `declarations.<class>:` line per declaration class, one `surplus:` line for the code design-surface scan, and one `non_runnable:` line for the non-runnable assessment, as the report contract requires, so neither an unexamined declaration class nor the Step 5 Part 2 result is silent.")
+		spec.Context = append(spec.Context, "Unit-level alignment scan: execute Step 1 (structural alignment) and Step 5 (implementation integrity and code design-surface surplus) over the whole unit — Step 5 covers both the code design-surface surplus analysis (Part A) and the non-runnable assessment (count the acceptance items marked `runnable: no`, check each carries a substantive `not_runnable_reason` with external evidence, and judge whether the remaining runnable set gives meaningful coverage) — Step 2 acceptance alignment, Step 3 scope accuracy and Step 6 are owned by the item sessions, while this session completes Step 7 first-principles divergence analysis for every structural or surplus MISMATCH it retains. Attribute code structures and designs to the responsibility of this unit before judging surplus: shared-file association is not exclusive ownership, independent behavior outside that responsibility is not surplus, and helpers or shared mechanisms implementing or constraining this unit's requirements remain in scope. If attribution evidence is missing from read_refs, report the missing input rather than infer a mismatch from file co-location.")
+		if spec.ScanRowScoped {
+			spec.Context = append(spec.Context, "This is a row-scoped scan re-run: judge ONLY the assigned rows and report only their `row` lines — every other row of the scan is carried from the baseline record, and the aggregate `declarations.`/`surplus:`/`non_runnable:` summary lines and the overall verdict line are not part of this report. Assigned rows: "+strings.Join(spec.ScanRows, ", "))
+		} else {
+			spec.Context = append(spec.Context, "Report one `declarations.<class>:` line per declaration class, one `surplus:` line for the code design-surface scan, one `non_runnable:` line for the non-runnable assessment, and one `row <row-id>: <verdict> — files: <comma-separated code files>` line per assigned catalog row (framework/verification_scope.md §Unit-scan row bookkeeping). The assigned catalog rows are: "+strings.Join(spec.ScanRows, ", ")+". Declaration rows verify every structural declaration of one promise entry or evidence-record section and cite the files they verified them in; surplus rows judge one declared code file's undeclared-behavior question; non-runnable rows assess one `runnable: no` item; the coverage row assesses the Step 5 Part 2 runnable-set coverage over the complete acceptance-item set.")
+		}
 	}
 	if kind == SessionKindChecks && run.TargetKind == TargetKindRule {
 		spec.Context = append(spec.Context, ruleConsumerContext(repoRoot, run))

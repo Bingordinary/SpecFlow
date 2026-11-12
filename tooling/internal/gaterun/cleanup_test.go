@@ -454,7 +454,7 @@ func TestSweepReclaimsOpenRunWithDeadEvidence(t *testing.T) {
 	specFile := "docs/specs/units/candidate/unit_auth.md"
 	writeFile(t, repoRoot, specFile, "# auth\n")
 
-	protocol := "fixture-protocol"
+	protocol := judgments.MustVerifySessionFingerprint(repoRoot, judgments.ProtocolSessionCode)
 	runID := "20260101-000000-b11d01"
 	record := evidenceRecord(t, repoRoot, protocol, specFile)
 	coverage := []CoverageKey{{Key: "code:reused.js", Kind: SessionKindCode, Lens: LensQuality, Task: "task-0001"}}
@@ -554,7 +554,7 @@ func TestSweepKeepsRepairableSessionDamage(t *testing.T) {
 	specFile := "docs/specs/units/candidate/unit_auth.md"
 	writeFile(t, repoRoot, specFile, "# auth\n")
 
-	protocol := "fixture-protocol"
+	protocol := judgments.MustVerifySessionFingerprint(repoRoot, judgments.ProtocolSessionCode)
 	runID := "20260101-000000-b11d03"
 	record := evidenceRecord(t, repoRoot, protocol, specFile)
 	coverage := []CoverageKey{{Key: "code:reused.js", Kind: SessionKindCode, Lens: LensQuality, Task: "task-0001"}}

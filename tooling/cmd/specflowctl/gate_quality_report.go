@@ -167,17 +167,17 @@ func parseQualitySessionReport(absRoot string, run *gaterun.Run, spec *gaterun.S
 		if err != nil {
 			return nil, fmt.Errorf("file %q: %w", block.Key, err)
 		}
-		// A design judgment declares the spec anchors its conclusion relied
-		// on — narrative-block headings and promise entry ids — and the
-		// record's spec pins are derived from them. A block without the
-		// declaration is rejected here rather than under-pinned silently; the
-		// anchors themselves are resolved against the unit spec when the
-		// record is saved (gaterun.SaveJudgment), where an unresolvable anchor
-		// is rejected too.
-		if ck.Kind == gaterun.SessionKindDesign {
+		// A design or architecture judgment declares the spec anchors its
+		// conclusion relied on — narrative-block headings and promise entry
+		// ids — and the record's spec pins are derived from them. A block
+		// without the declaration is rejected here rather than under-pinned
+		// silently; the anchors themselves are resolved against the unit spec
+		// when the record is saved (gaterun.SaveJudgment), where an
+		// unresolvable anchor is rejected too.
+		if ck.Kind == gaterun.SessionKindDesign || ck.Kind == gaterun.SessionKindArchitecture {
 			matches := specBasisLineRe.FindAllStringSubmatch(block.Text, -1)
 			if len(matches) == 0 {
-				return nil, fmt.Errorf("file %q: a design block must declare the spec anchors its judgment relied on — add at least one `Spec basis: <promise id or heading text>` line, where heading text is the heading line without its leading '#' markers", block.Key)
+				return nil, fmt.Errorf("block %q: a design or architecture block must declare the spec anchors its judgment relied on — add at least one `Spec basis: <promise id or heading text>` line, where heading text is the heading line without its leading '#' markers", block.Key)
 			}
 			if out.SpecBasis == nil {
 				out.SpecBasis = map[string][]string{}

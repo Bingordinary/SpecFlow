@@ -27,6 +27,20 @@ func testProtocolFor(t *testing.T, root, gate, targetKind string) string {
 	return judgments.MustProtocol(root, gate, targetKind)
 }
 
+// testCodeProtocol is the deployed standard a public code record binds.
+func testCodeProtocol(t *testing.T, root string) string {
+	t.Helper()
+	testsupport.DeployStandard(t, root)
+	return judgments.MustVerifySessionFingerprint(root, judgments.ProtocolSessionCode)
+}
+
+// testItemProtocol is the deployed standard an acceptance-item record binds.
+func testItemProtocol(t *testing.T, root string) string {
+	t.Helper()
+	testsupport.DeployStandard(t, root)
+	return judgments.MustVerifySessionFingerprint(root, judgments.ProtocolSessionItem)
+}
+
 func baselineStandards(t *testing.T, repoRoot string) map[string]string {
 	t.Helper()
 	testsupport.DeployStandard(t, repoRoot)
@@ -1496,7 +1510,37 @@ func buildVerifyBaselineFixture(t *testing.T, root string, entries []validationc
 		}
 		state.LogicalStatus[ck.Key] = status
 		result := SessionResult{Kind: ck.Kind, Verdicts: map[string]string{ck.Key: verdict}, EffectiveStatus: map[string]string{ck.Key: status}, ReportDigest: judgments.Digest([]byte("fixture"))}
-		if ck.Kind == SessionKindDesign {
+		if ck.Kind == SessionKindUnit {
+			// The unit-scan fixture records the full row catalog: declaration
+			// rows match (citing the declared surface), surplus rows are
+			// clean, non-runnable rows are ok.
+			catalog, cerr := UnitScanRowCatalog(root, run)
+			if cerr != nil {
+				t.Fatal(cerr)
+			}
+			files := surfaceFiles(run, true)
+			for _, row := range catalog {
+				rowResult := ScanRowResult{ID: row.ID}
+				switch row.Kind {
+				case RowKindDeclaration:
+					if len(files) == 0 {
+						rowResult.Verdict = RowUndetermined
+					} else {
+						rowResult.Verdict = RowMatch
+						rowResult.Files = append([]string(nil), files...)
+					}
+				case RowKindSurplus:
+					rowResult.Verdict = RowClean
+				case RowKindNonRunnable:
+					rowResult.Verdict = RowOK
+				case RowKindCoverage:
+					rowResult.Verdict = RowOK
+				}
+				result.Rows = append(result.Rows, rowResult)
+			}
+			result.Verdicts = map[string]string{ck.Key: AggregateUnitScanVerdict(result.Rows)}
+		}
+		if ck.Kind == SessionKindDesign || ck.Kind == SessionKindArchitecture {
 			result.SpecBasis = map[string][]string{ck.Key: anchors}
 		}
 		for _, p := range coverageReadRefs(root, run, ck) {
@@ -1671,7 +1715,7 @@ func TestExtendRejectsUnresolvedLogicalInput(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "src", "")
 	writeFile(t, repoRoot, "src/main.go", "package main\n")
-	writeFile(t, repoRoot, "docs/specs/units/candidate/evidence/unit_auth.md", "---\nunit: auth\n---\n\n# Evidence\n")
+	writeFile(t, repoRoot, "docs/specs/units/candidate/evidence/unit_auth.md", "---\nunit: auth\n---\n\n# Evidence\n\n## Auth behavior\n\nKeys:\n  - item:auth.core\n\nObserved auth behavior.\n")
 	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)

@@ -21,7 +21,11 @@ type surfaceJudgment struct {
 
 func surfaceJudgments(root string, report *specvalidation.SurfaceAuditReport) ([]surfaceJudgment, error) {
 	// The surface view reports verify judgment records, which are unit-gated.
-	protocol, err := judgments.Protocol(root, gaterun.GateVerify, gaterun.TargetKindUnit)
+	codeProtocol, err := judgments.VerifySessionFingerprint(root, judgments.ProtocolSessionCode)
+	if err != nil {
+		return nil, err
+	}
+	designProtocol, err := judgments.VerifySessionFingerprint(root, judgments.ProtocolSessionDesign)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +48,7 @@ func surfaceJudgments(root string, report *specvalidation.SurfaceAuditReport) ([
 			view.Associations = append(view.Associations, f)
 			name := u.Unit + "@" + u.Layer
 			view.Designs[name] = nil
-			if ref, ok := state.Records["design:"+u.Unit+":"+f.Path]; ok && ref.Layer == u.Layer && judgments.Check(root, ref.Reference, ref.Layer, protocol) == nil {
+			if ref, ok := state.Records["design:"+u.Unit+":"+f.Path]; ok && ref.Layer == u.Layer && judgments.Check(root, ref.Reference, ref.Layer) == nil {
 				copyRef := ref
 				view.Designs[name] = &copyRef
 			}
@@ -54,7 +58,7 @@ func surfaceJudgments(root string, report *specvalidation.SurfaceAuditReport) ([
 	// is asked one question per file instead of being read whole: the slot holds
 	// the handful of decisions ever accepted for that key.
 	for path, view := range files {
-		codeSlot, err := judgments.Slot(protocol, judgments.Code, "", path, "")
+		codeSlot, err := judgments.Slot(codeProtocol, judgments.Code, "", path, "")
 		if err != nil {
 			return nil, err
 		}
@@ -67,7 +71,7 @@ func surfaceJudgments(root string, report *specvalidation.SurfaceAuditReport) ([
 			if err != nil || r.Kind != judgments.Code {
 				continue
 			}
-			if judgments.Verify(root, r, ref, "stable", protocol) == nil {
+			if judgments.Verify(root, r, ref, "stable") == nil {
 				view.Public = append(view.Public, ref)
 			}
 		}
@@ -76,7 +80,7 @@ func surfaceJudgments(root string, report *specvalidation.SurfaceAuditReport) ([
 			if view.Designs[name] != nil {
 				continue
 			}
-			designSlot, err := judgments.Slot(protocol, judgments.Design, association.Unit, path, "")
+			designSlot, err := judgments.Slot(designProtocol, judgments.Design, association.Unit, path, "")
 			if err != nil {
 				return nil, err
 			}
@@ -89,7 +93,7 @@ func surfaceJudgments(root string, report *specvalidation.SurfaceAuditReport) ([
 				if err != nil || r.Kind != judgments.Design || r.Unit != association.Unit {
 					continue
 				}
-				if judgments.Verify(root, r, ref, association.Layer, protocol) != nil {
+				if judgments.Verify(root, r, ref, association.Layer) != nil {
 					continue
 				}
 				binding := judgments.Binding{Reference: ref, Layer: association.Layer, Source: "reused"}

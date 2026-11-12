@@ -31,6 +31,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -197,6 +198,14 @@ type SessionSpec struct {
 	// validate check session. It is empty for verify sessions and for rule
 	// validate (rule targets carry no per-object catalog).
 	ValidateObjects []validatekeys.Key `json:"validate_objects,omitempty"`
+	// ScanRows is the unit-scan session's assigned checklist rows: the full
+	// catalog for a full run, or the dead rows a delta/repair re-judges. Empty
+	// for every other session kind.
+	ScanRows []string `json:"scan_rows,omitempty"`
+	// ScanRowScoped marks a row-scoped delta/repair scan report: the session
+	// judges only ScanRows instead of the complete catalog, and reports no
+	// aggregate summary lines or overall verdict.
+	ScanRowScoped bool `json:"scan_row_scoped,omitempty"`
 	// Context carries report-kind-specific plan-time facts a mission must
 	// state verbatim.
 	Context []string `json:"context,omitempty"`
@@ -280,6 +289,13 @@ type FindingDisposition struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
+// ScanRowResult is one checklist row verdict of a unit-scan session report.
+type ScanRowResult struct {
+	ID      string   `json:"id"`
+	Verdict string   `json:"verdict"`
+	Files   []string `json:"files,omitempty"`
+}
+
 // SessionResult is the immutable machine-readable interpretation of an
 // accepted session report. Later sessions (the final synthesis) and
 // gate-finalize consume this structure, never a coordinator-supplied
@@ -292,6 +308,10 @@ type SessionResult struct {
 	EffectiveStatus    map[string]string    `json:"effective_status,omitempty"`
 	QualityConclusions map[string]string    `json:"quality_conclusions,omitempty"`
 	Dispositions       []FindingDisposition `json:"dispositions,omitempty"`
+	// Rows carries a unit-scan session's checklist row results. A full run
+	// reports every catalog row; a row-scoped delta reports only the rows its
+	// plan assigned. SaveJudgment turns them into the record's row pins.
+	Rows []ScanRowResult `json:"rows,omitempty"`
 	// BaselineDispositions records the check session's disposition of each
 	// injected baseline finding (fixed | not fixed | superseded) with its
 	// evidence. Only unit validate check sessions carry them; gate-finalize
@@ -399,14 +419,16 @@ type SessionState struct {
 type Run struct {
 	RunID         string `json:"run_id"`
 	SchemaVersion int    `json:"schema_version,omitempty"`
-	// Protocol is the gate-wide judging standard used by verify (bound per
-	// judgment record) and rule validate (which has no partial run). Unit
-	// validate records Standards instead.
+	// Protocol is the gate-wide judging standard used by shared-task
+	// fingerprinting and rule validate (which has no partial run). Verify
+	// binds each judgment record to its session class and the final synthesis
+	// to the cache's `cross` entry; unit validate records per-group Standards.
 	Protocol string `json:"protocol,omitempty"`
-	// Standards is the unit validate standard split by session group: one
-	// fingerprint per coverage group plus CrossKey for the final synthesis.
-	// Verify binds its standard per judgment record; rule validate has no
-	// partial run and keeps the single Protocol value.
+	// Standards is the per-session judging standard: unit validate one
+	// fingerprint per coverage group plus CrossKey for the final synthesis;
+	// verify one fingerprint per session class (the records bind their class,
+	// and the cache carries the synthesis class's CrossKey entry). Rule
+	// validate has no partial run and keeps the single Protocol value.
 	Standards     map[string]string            `json:"standards,omitempty"`
 	Records       map[string]judgments.Binding `json:"records,omitempty"`
 	Gate          string                       `json:"gate"`
@@ -433,8 +455,26 @@ type Run struct {
 	// RerunObjects is the delta plan's object-level re-run set. A group
 	// session receives only these objects; every other object in the group is
 	// carried from the baseline catalog.
-	RerunObjects  []string `json:"rerun_objects,omitempty"`
-	Relationships []string `json:"relationships"`
+	RerunObjects []string `json:"rerun_objects,omitempty"`
+	// ScanCatalog is the unit-scan row catalog fixed at plan time: every row
+	// the spec's structured content declares. A mission carries it as its
+	// assigned row set; a delta's ScanRows is a subset of it. The catalog is
+	// plan-time state so mission assembly and submission never re-read the
+	// spec, and a spec change after planning is caught by the snapshot
+	// comparison rather than silently changing the assigned rows.
+	ScanCatalog []string `json:"scan_catalog,omitempty"`
+	// ScanRows is the unit-scan delta plan's row-level re-run set: the
+	// checklist rows whose own pins no longer hold. The scan session of a
+	// partial run receives only these rows; every other row is carried from
+	// the baseline record. A full run leaves it empty — the session's
+	// SessionSpec carries the complete catalog as its assigned row set.
+	ScanRows []string `json:"scan_rows,omitempty"`
+	// CarriedScanRows snapshots the baseline unit-scan record's rows at plan
+	// time. Finalize merges the re-run rows with this snapshot instead of
+	// re-reading the baseline cache, so carried evidence stays fixed even when
+	// the baseline cache is later replaced or removed.
+	CarriedScanRows []judgments.RowPin `json:"carried_scan_rows,omitempty"`
+	Relationships   []string           `json:"relationships"`
 	// SynthesisRerun forces the final synthesis when the baseline recorded a
 	// synthesis conclusion under a synthesis standard the deployed documents
 	// no longer reproduce. It is set by the delta planner, not by a caller.
@@ -463,6 +503,17 @@ type Run struct {
 // coverage set rather than the full set. Both delta and the derived repair are
 // partial runs: a repair forces the failed (or invalidated) judgments and
 // carries the surviving pass conclusions exactly as a delta carries objects.
+// ProtocolForSessionKind returns the deployed judging standard bound to one
+// verify session class. A record's protocol is its own class's fingerprint, so
+// a Step edit re-runs that class only and a shared-document edit re-runs every
+// class (framework/validation_cache.md §Standard binding).
+func (r *Run) ProtocolForSessionKind(kind string) string {
+	if fingerprint, ok := r.Standards[kind]; ok && fingerprint != "" {
+		return fingerprint
+	}
+	return r.Protocol
+}
+
 func (r *Run) IsPartial() bool {
 	return r.Mode == ModeDelta || r.Mode == ModeRepair
 }
@@ -962,6 +1013,21 @@ func planUnlocked(repoRoot, gate, targetKind, targetName, target, mode string, e
 			run.Notices = append(run.Notices, notice)
 		}
 	}
+	// The unit-scan catalog is plan-time state: the mission carries it as the
+	// assigned row set, and submission validates against it. Deriving it here,
+	// once, keeps mission assembly from re-reading the spec and makes a spec
+	// change after planning a snapshot divergence instead of a silent catalog
+	// change.
+	if gate == GateVerify && targetKind == TargetKindUnit {
+		catalog, cerr := UnitScanRowCatalog(repoRoot, run)
+		if cerr != nil {
+			return nil, cerr
+		}
+		run.ScanCatalog = make([]string, 0, len(catalog))
+		for _, row := range catalog {
+			run.ScanCatalog = append(run.ScanCatalog, row.ID)
+		}
+	}
 	// The plan is published in one write, after every in-memory derivation —
 	// including a verify run's shared public tasks — has completed. A visible
 	// run state whose code coverage keys carry no task is a plan no submission
@@ -1021,10 +1087,24 @@ func (d *Derivation) resolveRun(gate, targetKind, targetName, target, mode strin
 		return nil, err
 	}
 	var standards map[string]string
-	if gate == GateValidate && targetKind == TargetKindUnit {
+	switch {
+	case gate == GateValidate && targetKind == TargetKindUnit:
 		standards, err = ValidateUnitStandards(repoRoot)
 		if err != nil {
 			return nil, err
+		}
+	case gate == GateVerify && targetKind == TargetKindUnit:
+		// Verify binds its judging standard per session class: a Step or
+		// Quality Lens edit re-runs exactly the classes that apply it, while a
+		// shared-document edit re-runs every class
+		// (framework/validation_cache.md §Standard binding).
+		standards = map[string]string{}
+		for _, kind := range judgments.VerifySessionKinds {
+			fingerprint, ferr := judgments.VerifySessionFingerprint(repoRoot, kind)
+			if ferr != nil {
+				return nil, ferr
+			}
+			standards[kind] = fingerprint
 		}
 	}
 	run := &Run{
@@ -1430,7 +1510,7 @@ func CompareDetailed(repoRoot string, run *Run) (SnapshotDrift, error) {
 			drift.Structural = true
 			return drift, nil
 		}
-		if current.Protocol != run.Protocol {
+		if !maps.Equal(current.Standards, run.Standards) || current.Protocol != run.Protocol {
 			drift.Divergences = []string{"review protocol changed"}
 			drift.Structural = true
 			return drift, nil

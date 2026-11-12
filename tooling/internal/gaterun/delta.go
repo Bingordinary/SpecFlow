@@ -126,6 +126,18 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 		return nil, nil, nil, nil, err
 	}
 	standing := standingRelationships(state)
+	// The final synthesis is the one verify conclusion with no judgment
+	// record, so its standard is the cache's `standards.cross` entry. A
+	// missing or moved standard re-runs the synthesis (and every standing
+	// relationship) even when no local conclusion re-ran; the local records
+	// stay valid because the synthesis-only sections are not part of their
+	// class standards (framework/validation_cache.md §Standard binding).
+	crossStandardMoved := false
+	if run.Gate == GateVerify && hasRecordedSynthesis(state) {
+		recorded, recordedOK := baseline.Standards[CrossKey]
+		current, currentOK := run.Standards[CrossKey]
+		crossStandardMoved = !recordedOK || !currentOK || recorded != current
+	}
 	if run.Mode == ModeRepair && !salvagedBaseline {
 		// A failure record whose per-check status map is absent, invalid, or
 		// inconsistent with its judgment baseline cannot say which judgments
@@ -136,6 +148,10 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 		// its forced set is the persisted invalidation list.
 		if reason, defective := repairStatusMapDefect(baseline, state); defective {
 			addRelationships(run, standing...)
+			// A full-scope plan re-judges every conclusion; a row scope set
+			// before the widening decision must not survive it.
+			run.ScanRows = nil
+			run.CarriedScanRows = nil
 			return full, nil, required, []string{reason + " — the plan covers the full scope"}, nil
 		}
 	}
@@ -190,22 +206,77 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 			notices = append(notices, "verify judgment "+ck.Key+" re-runs: "+err.Error())
 			continue
 		}
-		if err := judgments.Verify(d.root, record, binding.Reference, binding.Layer, run.Protocol); err != nil {
+		// The evidence the key currently requires must stay inside what the
+		// record actually read. This check runs before the unit-scan row scope:
+		// a declared code surface that gained a file can change a Step 1
+		// declaration verdict, and the new surplus row alone judges only
+		// Step 5 Part A. A newly required file therefore re-runs the whole
+		// conclusion.
+		if want, ok := requiredByKey[ck.Key]; ok && !forced[ck.Key] {
+			missing, newlyRequired, err := judgments.NewlyRequiredEvidence(d.root, want.Unit, want.Layer, *record, want.Inputs)
+			if err != nil {
+				return nil, nil, nil, nil, err
+			}
+			if newlyRequired {
+				forced[ck.Key] = true
+				notices = append(notices, "verify judgment "+ck.Key+" re-runs: the key now requires evidence the recorded judgment never read: "+missing)
+				continue
+			}
+		}
+		// The unit-scan record's delta scope is derived from its row
+		// bookkeeping before the record verdict is consulted — not only when
+		// the verification fails: the record-level pins (the class standard,
+		// the promise pins) are not rows and re-run the whole conclusion when
+		// any one of them fails, while a proper subset of dead or new rows
+		// scopes the re-run to exactly those rows
+		// (framework/validation_cache.md §Unit-scan row bookkeeping → Delta
+		// scope).
+		if ck.Kind == SessionKindUnit {
+			// An explicit --rerun override re-judges the whole conclusion: the
+			// row scope is the mechanical delta unit, not a narrowing of an
+			// operator's force request. Leaving run.ScanRows empty makes the
+			// mission the full catalog report.
+			if forced[ck.Key] {
+				notices = append(notices, "verify judgment "+ck.Key+" re-runs whole: an explicit --rerun override")
+				continue
+			}
+			// Row-level reuse is derived only from a passing conclusion. The
+			// baseline's logical status is the gate-level fact: a failed (or
+			// unrecorded) status must re-run the whole scan, because a failed
+			// conclusion is re-judged, never carried. unitScanRowScope repeats
+			// the check against the record's own aggregate verdict for caches
+			// whose status map and record disagree.
+			if state.LogicalStatus[ck.Key] != "pass" {
+				forced[ck.Key] = true
+				notices = append(notices, "verify judgment "+ck.Key+" re-runs whole: the baseline conclusion did not pass")
+				continue
+			}
+			scope, serr := unitScanRowScope(d.root, run, record, binding.Reference, binding.Layer)
+			if serr != nil {
+				forced[ck.Key] = true
+				notices = append(notices, "verify judgment "+ck.Key+" re-runs: "+serr.Error())
+				continue
+			}
+			if scope.whole {
+				forced[ck.Key] = true
+				notices = append(notices, "verify judgment "+ck.Key+" re-runs: "+scope.why)
+				continue
+			}
+			if len(scope.scope) > 0 {
+				forced[ck.Key] = true
+				run.ScanRows = scope.scope
+				run.CarriedScanRows = append([]judgments.RowPin(nil), record.Rows...)
+				notices = append(notices, fmt.Sprintf("unit-scan rows re-run: %s", strings.Join(scope.scope, ", ")))
+				notices = append(notices, scope.notices...)
+				continue
+			}
+			// Every row carries and the record-level pins hold: fall through
+			// to the full verification below, which passes.
+		}
+		if err := judgments.Verify(d.root, record, binding.Reference, binding.Layer); err != nil {
 			forced[ck.Key] = true
 			notices = append(notices, "verify judgment "+ck.Key+" re-runs: "+err.Error())
 			continue
-		}
-		want, ok := requiredByKey[ck.Key]
-		if !ok {
-			continue
-		}
-		missing, newlyRequired, err := judgments.NewlyRequiredEvidence(d.root, want.Unit, want.Layer, *record, want.Inputs)
-		if err != nil {
-			return nil, nil, nil, nil, err
-		}
-		if newlyRequired {
-			forced[ck.Key] = true
-			notices = append(notices, "verify judgment "+ck.Key+" re-runs: the key now requires evidence the recorded judgment never read: "+missing)
 		}
 	}
 	// A public quality record and its design companion travel together.
@@ -235,6 +306,8 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 				if !currentSet[key] {
 					addRelationships(run, standing...)
 					notices = append(notices, fmt.Sprintf("re-run judgment %q is not in the current coverage surface — the plan covers the full scope", key))
+					run.ScanRows = nil
+					run.CarriedScanRows = nil
 					return full, nil, required, notices, nil
 				}
 				forced[key] = true
@@ -245,6 +318,8 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 			if !ok {
 				addRelationships(run, standing...)
 				notices = append(notices, fmt.Sprintf("re-run judgment %q is not in the current coverage surface — the plan covers the full scope", raw))
+				run.ScanRows = nil
+				run.CarriedScanRows = nil
 				return full, nil, required, notices, nil
 			}
 			forced[key] = true
@@ -316,13 +391,17 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 		notices = append(notices, "new evidence not in the baseline: "+strings.Join(newEvidence, ", ")+" — background material; it re-runs nothing")
 	}
 
-	// A changed local conclusion re-runs the whole relationship scope: the
-	// synthesis consumes the local results, so a carried relationship would be
-	// a verdict over superseded inputs.
+	// A relationship re-checks only when its own consumed keys re-ran: the
+	// synthesis compares contracts and shared definitions across the source
+	// parts, so a relationship whose inputs all carried keeps its recorded
+	// verdict instead of re-checking over unchanged inputs
+	// (framework/verification_scope.md §Incremental relationship work).
 	localChanged := len(forced) > 0 || len(newKeys) > 0
 	if dead := synthesisEvidenceDead(d.root, state); dead != "" {
 		if len(standing) == 0 {
 			notices = append(notices, "synthesis evidence changed ("+dead+") and the baseline declares no relationship scope — the plan covers the full scope")
+			run.ScanRows = nil
+			run.CarriedScanRows = nil
 			return full, nil, required, notices, nil
 		}
 		addRelationships(run, standing...)
@@ -330,7 +409,52 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 		notices = append(notices, "synthesis evidence changed: "+dead+" — the standing relationship conclusions re-run")
 	}
 	if localChanged {
+		changed := map[string]bool{}
+		for key := range forced {
+			changed[key] = true
+		}
+		for _, key := range newKeys {
+			changed[key] = true
+		}
+		var carriedRelationships []string
+		for _, name := range standing {
+			// A failed relationship is a retained conclusion that must be
+			// re-checked, not carried: the delta rule re-checks consumed-key
+			// changes, a moved pinned synthesis evidence input, and a failed
+			// relationship (framework/verification_scope.md §Incremental
+			// relationship work).
+			if state.LogicalStatus[RelationshipKey(name)] == "fail" || RelationshipConsumesChangedKey(name, changed) {
+				addRelationships(run, name)
+			} else {
+				carriedRelationships = append(carriedRelationships, name)
+			}
+		}
+		if len(carriedRelationships) > 0 {
+			notices = append(notices, "standing relationship conclusions whose consumed keys did not re-run and whose recorded status passed carry: "+strings.Join(carriedRelationships, ", "))
+		}
+	}
+	// A failed standing relationship is re-checked even when no local
+	// conclusion re-ran: the recorded verdict is a retained conclusion, and a
+	// relationship-only run is still a valid final-synthesis run
+	// (framework/verification_scope.md §Incremental relationship work).
+	var failedStanding []string
+	for _, name := range standing {
+		if state.LogicalStatus[RelationshipKey(name)] == "fail" && !stringInSlice(run.Relationships, name) {
+			failedStanding = append(failedStanding, name)
+		}
+	}
+	if len(failedStanding) > 0 {
+		addRelationships(run, failedStanding...)
+		notices = append(notices, "failed standing relationship conclusions re-check: "+strings.Join(failedStanding, ", "))
+	}
+	// A moved final-synthesis standard re-runs the synthesis over the carried
+	// local results. Every standing relationship is assigned: the synthesis
+	// rules that produced their verdicts are not the current ones, even when
+	// no consumed key changed.
+	if crossStandardMoved {
+		run.SynthesisRerun = true
 		addRelationships(run, standing...)
+		notices = append(notices, "the final-synthesis judging standard changed — the synthesis re-runs over the carried local results")
 	}
 
 	rerunSet := map[string]bool{}
@@ -340,7 +464,7 @@ func (d *Derivation) buildMechanicalVerifyPlan(run *Run) ([]CoverageKey, []strin
 	for _, key := range newKeys {
 		rerunSet[key] = true
 	}
-	if len(rerunSet) == 0 && len(run.Relationships) == 0 {
+	if len(rerunSet) == 0 && len(run.Relationships) == 0 && !run.SynthesisRerun {
 		msg := "cache is fresh — no conclusion's evidence changed; there is nothing to re-run"
 		if len(uncovered) > 0 {
 			msg += fmt.Sprintf(". Note: %d recorded file(s) changed that no conclusion depends on — run `verify@%s` (full) to confirm no semantic dependency was missed: %s", len(uncovered), run.TargetName, strings.Join(uncovered, ", "))
@@ -642,7 +766,7 @@ func (d *Derivation) buildDeltaPlan(run *Run) ([]CoverageKey, []string, []string
 			return upgrade("the failure record carries no per-object catalog", standing)
 		}
 	}
-	movedGroups, crossMoved, standardReason, standardMoved := validateStandardsMoved(run, baseline)
+	movedGroups, crossMoved, standardReason, standardMoved := validateStandardsMoved(run, baseline, state)
 	if standardMoved {
 		return upgrade(standardReason, standing)
 	}
@@ -978,9 +1102,11 @@ func normalizeGateKey(run *Run, key string, currentSet map[string]bool) (string,
 //
 // A cache that records no per-group standard cannot prove which standard
 // judged it, so it counts as moved and the plan covers the full scope (the
-// pre-binding cache format). Rule validate has no partial run and keeps the
-// single standard comparison.
-func validateStandardsMoved(run *Run, baseline *validationcache.GateBaseline) (groups []string, cross bool, reason string, moved bool) {
+// pre-binding cache format). A cache that carries a synthesis conclusion but
+// no `cross` entry cannot prove the synthesis standard either, so the
+// synthesis re-runs over the carried local results. Rule validate has no
+// partial run and keeps the single standard comparison.
+func validateStandardsMoved(run *Run, baseline *validationcache.GateBaseline, state JudgmentBaseline) (groups []string, cross bool, reason string, moved bool) {
 	if run.TargetKind == TargetKindRule {
 		if baseline.Standard == run.Protocol {
 			return nil, false, "", false
@@ -1018,9 +1144,10 @@ func validateStandardsMoved(run *Run, baseline *validationcache.GateBaseline) (g
 			groups = append(groups, group)
 		}
 	}
-	if recorded, ok := baseline.Standards[CrossKey]; ok {
+	if _, hasCross := baseline.Standards[CrossKey]; hasCross || hasRecordedSynthesis(state) {
+		recorded, recordedOK := baseline.Standards[CrossKey]
 		current, currentOK := run.Standards[CrossKey]
-		if !currentOK || recorded != current {
+		if !recordedOK || !currentOK || recorded != current {
 			cross = true
 		}
 	}

@@ -125,6 +125,26 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		case gaterun.SessionKindChecks:
 			lines = append(lines, fmt.Sprintf("%s. <check name>: <PASS|WARNING|FAIL> — <reason>", key))
 		case gaterun.SessionKindUnit:
+			if session.ScanRowScoped {
+				lines = append(lines,
+					"# row-scoped re-run: report exactly one `row` line per assigned row, in the listed order — no aggregate summary lines and no overall verdict line",
+					"# assigned rows: "+strings.Join(session.ScanRows, ", "),
+					"row <row-id>: <match|undetermined|mismatch|clean|surplus|ok|defect> — files: <comma-separated code files>",
+					"  # declaration rows (decl:promise:<id>, decl:evidence:<item>) verify every structural declaration of that source; a match row cites the files it verified them in",
+					"  # surplus rows (surplus:<file>) judge that file's undeclared-behavior question; non-runnable rows (non_runnable:<item>) assess that `runnable: no` item; the coverage row (coverage:<item-set-id>) assesses the Step 5 Part 2 runnable-set coverage over the complete acceptance-item set",
+					"  # for a mismatch or surplus row, append one finding block per retained mismatch (Problem: onward, same format as below)",
+					"  Problem: <one line>",
+					"  Evidence:",
+					"    - spec: <quoted fact or absence and searched scope>",
+					"    - code: <quoted fact or absence and searched scope>",
+					"  Impact: <one line>",
+					"  Fix: <repair>   # or Decision: <choice> with at least one indented Options: entry (needs_design or blocked)",
+					"  Root cause: <incomplete|stale|shadow_spec|divergence|accident|blocked>",
+					"  Suggested direction: <spec_gap|code_gap|needs_design|blocked>",
+					"  Severity: <P0|P1|P2|P3>",
+					"  Confidence: <high|medium|low>")
+				break
+			}
 			lines = append(lines,
 				fmt.Sprintf("%s: <ALIGNED|MISMATCH ("+strings.Join(unitMismatchTypes, "|")+")|CANNOT_DETERMINE> — <reason>", key),
 				"  # for a MISMATCH, append one finding block per retained mismatch (each Step 1 declaration-class or Step 5 surplus mismatch), in report order:",
@@ -144,7 +164,15 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			}
 			lines = append(lines,
 				"surplus: found=<n> — <result>",
-				"non_runnable: count=<n> — <result>")
+				"non_runnable: count=<n> — <result>",
+				"  # checklist rows: exactly one `row` line per assigned catalog row — one declaration row per promise entry (decl:promise:<id>) and per evidence-record section (decl:evidence:<item>), one surplus row per declared code file (surplus:<file>), one non-runnable row per `runnable: no` item (non_runnable:<item>), and one coverage row for the Step 5 Part 2 runnable-set assessment (coverage:<item-set-id>)",
+				"row decl:promise:<promise-id>: <match|undetermined|mismatch> — files: <comma-separated code files>",
+				"row decl:evidence:<item-id>: <match|undetermined|mismatch> — files: <comma-separated code files>",
+				"row surplus:<file>: <clean|surplus> — <detail>",
+				"row non_runnable:<item-id>: <ok|defect> — <detail>",
+				"row coverage:<item-set-id>: <ok|defect> — <detail>",
+				"  # the coverage row assesses the remaining runnable set over the complete acceptance-item set; ok means meaningful runnable coverage, defect means the Step 5 Part 2 concern",
+				"# assigned catalog rows: "+strings.Join(session.ScanRows, ", "))
 		case gaterun.SessionKindItem:
 			lines = append(lines,
 				fmt.Sprintf("%s: <ALIGNED|MISMATCH (type)|CANNOT_DETERMINE> — <reason>", key),
@@ -184,6 +212,12 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 			}
 			lines = append(lines, prefix+key, "conclusion: <acceptable|needs_attention|unacceptable> — <reason>")
 			if kind == gaterun.SessionKindArchitecture {
+				lines = append(lines,
+					"Spec basis: <narrative block heading text or promise id>",
+					"  # at least one Spec basis line per unit block, one anchor each: the spec",
+					"  # design content this assessment relied on — a promise id, or the heading text",
+					"  # of a ## section or ###/deeper narrative block. Every anchor must resolve; an",
+					"  # edit to a declared anchor re-runs the assessment, an edit elsewhere does not.")
 				for _, field := range qualityDimensions {
 					lines = append(lines, field+": <assessment> — <basis>")
 				}
@@ -309,15 +343,20 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		c.Requirements[len(c.Requirements)-1].CountBasis = "per_mismatch_finding"
 	}
 	if session.Kind == gaterun.SessionKindUnit {
-		add("mismatch-type", "MISMATCH requires one of: "+strings.Join(unitMismatchTypes, ", ")+"; when several are retained the verdict-line type names the primary one and each finding block carries its own root cause and severity")
-		c.Requirements[len(c.Requirements)-1].When = "if_mismatch"
-		c.Requirements[len(c.Requirements)-1].MinCount = 0
-		c.Requirements[len(c.Requirements)-1].Allowed = unitMismatchTypes
-		for _, class := range unitScanClasses {
-			add("unit-scan-"+class, "exactly one `declarations."+class+": checked=<n> — <result>` line; n is how many declarations of this class were located and compared — a class you did not examine is reported as checked=0 with the reason, so a skipped class is visible")
+		if session.ScanRowScoped {
+			add("unit-scan-rows-scoped", "report exactly one `row` line per assigned row ("+strings.Join(session.ScanRows, ", ")+") and nothing else: no aggregate `declarations.`/`surplus:`/`non_runnable:` lines and no overall verdict line; a match declaration row cites at least one code file; a mismatched or surplus row carries its finding block; a coverage row states the Step 5 Part 2 runnable-set result")
+		} else {
+			add("mismatch-type", "MISMATCH requires one of: "+strings.Join(unitMismatchTypes, ", ")+"; when several are retained the verdict-line type names the primary one and each finding block carries its own root cause and severity")
+			c.Requirements[len(c.Requirements)-1].When = "if_mismatch"
+			c.Requirements[len(c.Requirements)-1].MinCount = 0
+			c.Requirements[len(c.Requirements)-1].Allowed = unitMismatchTypes
+			for _, class := range unitScanClasses {
+				add("unit-scan-"+class, "exactly one `declarations."+class+": checked=<n> — <result>` line; n is how many declarations of this class were located and compared — a class you did not examine is reported as checked=0 with the reason, so a skipped class is visible")
+			}
+			add("unit-scan-surplus", "exactly one `surplus: found=<n> — <result>` line; n is the number of surplus candidates that survived the design-decision filter")
+			add("unit-scan-non-runnable", "exactly one `non_runnable: count=<n> — <result>` line; n is the number of acceptance items marked `runnable: no`, and the result states whether each carries a substantive not_runnable_reason with external evidence and whether the remaining runnable set gives meaningful coverage (Step 5 Part 2)")
+			add("unit-scan-rows", "exactly one `row` line per assigned catalog row ("+strings.Join(session.ScanRows, ", ")+") — one declaration row per promise entry and per evidence-record section, one surplus row per declared code file, one non-runnable row per `runnable: no` item, and one coverage row for the Step 5 Part 2 runnable-set assessment; a match declaration row cites the code files it verified the declarations in; a mismatched or surplus row carries its finding block; a coverage row states ok or defect over the complete acceptance-item set")
 		}
-		add("unit-scan-surplus", "exactly one `surplus: found=<n> — <result>` line; n is the number of surplus candidates that survived the design-decision filter")
-		add("unit-scan-non-runnable", "exactly one `non_runnable: count=<n> — <result>` line; n is the number of acceptance items marked `runnable: no`, and the result states whether each carries a substantive not_runnable_reason with external evidence and whether the remaining runnable set gives meaningful coverage (Step 5 Part 2)")
 		for _, field := range analysisFields {
 			allowed := analysisAllowed(field)
 			add("unit-"+field, "for a MISMATCH, one non-empty "+field+" line per retained mismatch finding block")
@@ -378,6 +417,7 @@ func reportContractFor(run *gaterun.Run, session *gaterun.SessionSpec) gateRepor
 		for _, field := range qualityDimensions {
 			add("architecture-"+field, "one non-empty architecture assessment and basis for "+field)
 		}
+		add("architecture-spec-basis", "at least one `Spec basis: <anchor>` line, one anchor each — a promise entry id, or the heading text of a `##` section or `###`/deeper narrative block (the heading line without its leading '#' markers); every anchor must resolve to the unit spec, and an edit to a declared anchor re-runs the assessment while an edit elsewhere does not")
 		add("architecture-gate-findings", "one gate_findings line")
 		add("architecture-suppressed", "one Suppressed by spec (N) block")
 	}

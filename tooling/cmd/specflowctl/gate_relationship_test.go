@@ -470,3 +470,93 @@ func TestRelationshipRestatingLocalFindingMergesToCountOnce(t *testing.T) {
 		t.Fatalf("merged finding must fail both keys and cross: %+v", baseline.LogicalStatus)
 	}
 }
+
+// verifyDeltaFailedRelationshipBaseline builds a pass verify cache that
+// records one failed standing relationship with a P2 finding. The cache result
+// stays pass because the finding is advisory, which is exactly the state a
+// later delta must not carry forward as a still-failing conclusion.
+func verifyDeltaFailedRelationshipBaseline(t *testing.T) (root, main string) {
+	t.Helper()
+	root = createCLITestRepo(t)
+	main = grWriteSpec(t, root, "auth")
+	grWriteFile(t, root, "src/auth.go", "package auth\n")
+
+	full := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency")
+	grSubmitOK(t, root, full, "auth.core", grVerifyItemReport("auth.core", main, "src/auth.go"))
+	grAutoSubmitRemaining(t, root, full)
+	cross := fmt.Sprintf(
+		"Cross item: contract_consistency = FAIL — producer and consumer disagree\n"+
+			"Cross item finding: contract_consistency = %s/cross/F1\n"+
+			"relationship:contract_consistency: %s: all\n"+
+			"Cross-check: 0/1 PASS — advisory relationship failure linked to a P2 finding\n"+
+			"[P2] relationship — two otherwise valid parts disagree (actionable)\n"+
+			"  problem: definitions disagree\n"+
+			"  evidence: both definitions read\n"+
+			"  impact: combined behavior drifts\n"+
+			"  fix: reconcile the definitions\n"+
+			"Finding affects: %s/cross/F1 = relationship:contract_consistency\n",
+		full, main, full)
+	if _, err := grSubmitRaw(t, root, full, "cross", grCompleteCrossReport(t, root, mustLoadRun(t, root, full), cross)); err != nil {
+		t.Fatalf("cross report: %v", err)
+	}
+	grFinalizeOK(t, root, full)
+
+	cache, err := validationcache.ReadGateBaseline(root, "unit", "auth", "verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cache.Result != "pass" {
+		t.Fatalf("a P2-only relationship failure must leave a pass baseline, got %q", cache.Result)
+	}
+	baseline := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
+	if baseline.LogicalStatus["relationship:contract_consistency"] != "fail" {
+		t.Fatalf("baseline relationship status = %q, want fail: %v", baseline.LogicalStatus["relationship:contract_consistency"], baseline.LogicalStatus)
+	}
+	return root, main
+}
+
+// TestGateVerifyDeltaRechecksFailedStandingRelationship pins the failed-
+// relationship half of the delta rule: a standing relationship whose recorded
+// status is fail is re-checked even when none of its consumed key classes
+// re-ran. An advisory P2 failure can leave the baseline result pass, so the
+// delta must not carry that failed conclusion forward
+// (framework/verification_scope.md §Incremental relationship work).
+func TestGateVerifyDeltaRechecksFailedStandingRelationship(t *testing.T) {
+	root, main := verifyDeltaFailedRelationshipBaseline(t)
+
+	// An item-only edit re-runs the item; contract_consistency consumes the
+	// declaration scan and code/design judgments, so without the failed-status
+	// rule it would carry its failed advisory conclusion.
+	data, err := os.ReadFile(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(main, []byte(strings.Replace(string(data), "Passes.", "Passes quickly.", 1)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	delta := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	run := mustLoadRun(t, root, delta)
+	if !grContainsString(run.Relationships, "contract_consistency") {
+		t.Fatalf("a failed standing relationship must re-check, got %v", run.Relationships)
+	}
+	if grContainsString(run.CarriedKeys, "relationship:contract_consistency") {
+		t.Fatalf("a failed standing relationship must not carry, got %v", run.CarriedKeys)
+	}
+}
+
+// TestGateVerifyDeltaRechecksFailedRelationshipWithoutLocalChange pins the
+// no-local-change half: a failed standing relationship is a retained
+// conclusion, so a delta with nothing else to re-run still plans its re-check
+// instead of reporting the cache fresh.
+func TestGateVerifyDeltaRechecksFailedRelationshipWithoutLocalChange(t *testing.T) {
+	root, _ := verifyDeltaFailedRelationshipBaseline(t)
+
+	delta := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--mode", "delta")
+	run := mustLoadRun(t, root, delta)
+	if !grContainsString(run.Relationships, "contract_consistency") {
+		t.Fatalf("a failed standing relationship must re-check without a local change, got %v", run.Relationships)
+	}
+	if grContainsString(run.CarriedKeys, "relationship:contract_consistency") {
+		t.Fatalf("a failed standing relationship must not carry, got %v", run.CarriedKeys)
+	}
+}

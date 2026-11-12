@@ -356,7 +356,7 @@ func grAutoSubmitRemaining(t *testing.T, repoRoot, runID string) {
 		}
 		report := grDefaultQualityReport(run, ck)
 		if ck.Kind == gaterun.SessionKindUnit {
-			report = grVerifyUnitScanReport(ck.Key)
+			report = grVerifyUnitScanReport(t, repoRoot, run, ck.Key)
 		}
 		path := grWriteFile(t, t.TempDir(), "quality-report.md", report)
 		var stdout, stderr bytes.Buffer
@@ -2113,11 +2113,11 @@ func TestGateCrossFailureForcesDerivedFailure(t *testing.T) {
 	if got := strings.Join(coverageKeysOf(repair), ","); got != "item:auth:auth.login" {
 		t.Fatalf("expected the cross finding's affected key to drive repair scope, got %s", got)
 	}
-	// A changed local conclusion re-runs the whole relationship scope: the
-	// synthesis consumes the local results, so a carried relationship would be
-	// a verdict over superseded inputs.
-	if got := strings.Join(repair.CarriedKeys, ","); got != "architecture:auth,code:src/auth.go,design:auth:src/auth.go,item:auth:auth.logout,unit:auth" {
-		t.Fatalf("expected unaffected auth.logout and the quality key to be carried, got %s", got)
+	// A relationship re-checks only when its consumed keys re-ran: the failed
+	// state_machine_coherence re-synthesizes, while the passing relationships
+	// whose consumed keys all carried keep their recorded verdicts.
+	if got := strings.Join(repair.CarriedKeys, ","); got != "architecture:auth,code:src/auth.go,design:auth:src/auth.go,item:auth:auth.logout,relationship:contract_consistency,relationship:data_definition_drift,relationship:error_code_conflict,unit:auth" {
+		t.Fatalf("expected unaffected keys and unconsumed relationships to be carried, got %s", got)
 	}
 	if !grContainsString(repair.Relationships, "state_machine_coherence") {
 		t.Fatalf("expected the failed relationship re-synthesized, got %v", repair.Relationships)
@@ -3851,10 +3851,13 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Whole-file cache freshness flags the reorder as a content change: the
-	// delta plan judges what it means (the item records above survive it).
-	if res.Fresh {
-		t.Fatalf("expected the reorder to be detected as a whole-file content change")
+	// No recorded conclusion depends on item ordering: item regions keep their
+	// content identity when reordered, and the unit-scan rows and architecture
+	// anchors pin promise/evidence regions and declared design content, not the
+	// whole spec file. The cache therefore stays fresh; the delta planner
+	// judges the same pins when a real edit lands.
+	if !res.Fresh {
+		t.Fatalf("a pure item reorder invalidates no recorded conclusion — the cache must stay fresh: %s", res.Reason)
 	}
 
 	// Edit only the auth.login item — auth.logout's evidence is unchanged.
@@ -3918,7 +3921,7 @@ func TestGateRunVerifyItemLevelDelta(t *testing.T) {
 		t.Fatalf("carried item retained the previous spec context: %s %v", record.SpecContext, err)
 	}
 	synthesisPromote(t, repoRoot, "auth")
-	protocol, perr := judgments.Protocol(repoRoot, "verify", "unit")
+	protocol, perr := judgments.VerifySessionFingerprint(repoRoot, judgments.ProtocolSessionItem)
 	if perr != nil {
 		t.Fatal(perr)
 	}

@@ -310,8 +310,8 @@ func gateNextAction(run *gaterun.Run, states []*gaterun.SessionState, uncovered 
 // (tooling/cmd/specflowctl/gate_finalize.go requiresFinalSynthesis). Any
 // assigned relationship requires one. A validate run (full or delta)
 // additionally requires one for blocking P0/P1 findings only — its P2/P3
-// advisories are non-blocking. Verify requires one for any finding. Rule runs
-// never synthesize.
+// advisories are non-blocking. Verify requires one for any finding, or when a
+// moved final-synthesis standard forces it. Rule runs never synthesize.
 func gateRequiresSynthesis(run *gaterun.Run, states []*gaterun.SessionState) bool {
 	if run.TargetKind == gaterun.TargetKindRule {
 		return false

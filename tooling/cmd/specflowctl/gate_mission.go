@@ -258,6 +258,11 @@ type missionSession struct {
 	ReadInputs    []missionReadInput `json:"read_inputs"`
 	DependsOn     []string           `json:"depends_on"`
 	Context       []string           `json:"context,omitempty"`
+	// ScanRows is the unit-scan session's assigned checklist row set and
+	// ScanRowScoped marks a row-scoped delta/repair report shape. Other
+	// session kinds leave both empty.
+	ScanRows      []string `json:"scan_rows,omitempty"`
+	ScanRowScoped bool     `json:"scan_row_scoped,omitempty"`
 	// ValidateObjects is the per-object judgment batch for a unit validate
 	// delta check session. Each key is one object this session judges; the
 	// report carries the check verdict and findings, not a per-object table.
@@ -331,6 +336,8 @@ func buildGateMission(root string, run *gaterun.Run, spec *gaterun.SessionSpec, 
 		ReadInputs:       missionInputs(run, spec),
 		DependsOn:        append([]string{}, spec.DependsOn...),
 		Context:          append([]string{}, spec.Context...),
+		ScanRows:         append([]string{}, spec.ScanRows...),
+		ScanRowScoped:    spec.ScanRowScoped,
 		ValidateObjects:  sessionObjects,
 		Dependencies:     []missionDependency{},
 		CarriedResults:   []missionDependency{},

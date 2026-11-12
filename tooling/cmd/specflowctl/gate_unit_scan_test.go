@@ -64,24 +64,24 @@ func TestUnitScanReportRejectsSkippedClassAndForeignMismatchType(t *testing.T) {
 	grEnableMissionLayout(t, root)
 	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 
-	missing := strings.Replace(grVerifyUnitScanReport("unit:auth"), "declarations.error_types: checked=0 — fixture scan\n", "", 1)
+	missing := strings.Replace(grVerifyUnitScanReport(t, root, mustLoadRun(t, root, id), "unit:auth"), "declarations.error_types: checked=0 — fixture scan\n", "", 1)
 	if _, err := grSubmit(t, root, id, "unit:auth", missing); err == nil || !strings.Contains(err.Error(), "declarations.error_types") {
 		t.Fatalf("a report that skips a declaration class must be rejected, got %v", err)
 	}
 
-	noRunnable := strings.Replace(grVerifyUnitScanReport("unit:auth"), "non_runnable: count=0 — fixture scan\n", "", 1)
+	noRunnable := strings.Replace(grVerifyUnitScanReport(t, root, mustLoadRun(t, root, id), "unit:auth"), "non_runnable: count=0 — fixture scan\n", "", 1)
 	if _, err := grSubmit(t, root, id, "unit:auth", noRunnable); err == nil || !strings.Contains(err.Error(), "non_runnable") {
 		t.Fatalf("a report that omits the Step 5 Part 2 line must be rejected, got %v", err)
 	}
 
-	scope := grVerifyUnitScanReport("unit:auth")
+	scope := grVerifyUnitScanReport(t, root, mustLoadRun(t, root, id), "unit:auth")
 	scope = strings.Replace(scope, "unit:auth: ALIGNED — fixture scan", "unit:auth: MISMATCH (scope) — declared surface points elsewhere", 1)
 	scope += grVerifyAnalysisFields("unit:auth")
 	if _, err := grSubmit(t, root, id, "unit:auth", scope); err == nil || !strings.Contains(err.Error(), "structural | surplus") {
 		t.Fatalf("the unit scan must reject a scope mismatch type, got %v", err)
 	}
 
-	grSubmitOK(t, root, id, "unit:auth", grVerifyUnitScanReport("unit:auth"))
+	grSubmitOK(t, root, id, "unit:auth", grVerifyUnitScanReport(t, root, mustLoadRun(t, root, id), "unit:auth"))
 	key := "item:auth:auth.core"
 	sharedSubmit(t, root, id, key, grVerifyItemBody(key, "ALIGNED", "contracts.js:1")+key+": "+main+": acceptance_item:auth.core\n")
 	sharedFinish(t, root, id)
@@ -97,34 +97,37 @@ func TestUnitScanReportRejectsSkippedClassAndForeignMismatchType(t *testing.T) {
 	if record.Kind != judgments.Unit {
 		t.Fatalf("unit scan judgment kind = %q, want %q", record.Kind, judgments.Unit)
 	}
-	// The unit scan pins the whole unit: its main spec is an owned dependency.
+	// The unit scan pins the unit's own spec through its row bookkeeping: a
+	// row's spec-side region dependency is an owned dependency of the record.
 	found := false
-	for _, dep := range record.Dependencies {
-		if dep.Own && strings.HasSuffix(dep.Path, ".md") {
-			found = true
+	for _, row := range record.Rows {
+		for _, dep := range row.Deps {
+			if dep.Own && strings.HasSuffix(dep.Path, ".md") {
+				found = true
+			}
 		}
 	}
 	if !found {
-		t.Fatalf("the unit scan judgment must pin the unit's own spec: %+v", record.Dependencies)
+		t.Fatalf("the unit scan judgment must pin the unit's own spec through its rows: %+v", record.Rows)
 	}
 }
 
 // unitScanMismatchReport renders a unit scan report that retains two independent
-// mismatches, each as its own `Problem:` finding block. The blocks are the
-// contiguous indented lines directly under the verdict line (the unindented
-// declaration lines come after, as the parser reads the finding block from the
-// verdict line's continuation).
-func unitScanMismatchReport() string {
-	var b strings.Builder
-	b.WriteString("unit:auth: MISMATCH (structural) — two retained mismatches\n")
-	b.WriteString(grVerifyAnalysisFields("unit:auth", "P1"))
-	b.WriteString(grVerifyAnalysisFields("unit:auth", "P2"))
-	for _, class := range unitScanClasses {
-		fmt.Fprintf(&b, "declarations.%s: checked=1 — fixture scan\n", class)
-	}
-	b.WriteString("surplus: found=1 — one surplus construct\n")
-	b.WriteString("non_runnable: count=0 — none\n")
-	return b.String()
+// mismatches, each as its own `Problem:` finding block under the verdict line.
+// The mismatching checklist rows are reported as row lines.
+func unitScanMismatchReport(t *testing.T, root string, run *gaterun.Run) string {
+	t.Helper()
+	report := grVerifyUnitScanReport(t, root, run, "unit:auth")
+	report = strings.Replace(report,
+		"unit:auth: ALIGNED — fixture scan\n",
+		"unit:auth: MISMATCH (structural) — two retained mismatches\n"+grVerifyAnalysisFields("unit:auth", "P1")+grVerifyAnalysisFields("unit:auth", "P2"), 1)
+	report = strings.Replace(report,
+		"row decl:promise:auth.core: match — files: contracts.js",
+		"row decl:promise:auth.core: mismatch — files: contracts.js", 1)
+	report = strings.Replace(report,
+		"row surplus:contracts.js: clean — no undeclared behavior",
+		"row surplus:contracts.js: surplus — one surplus construct", 1)
+	return report
 }
 
 // TestUnitScanRetainsMultipleFindings locks the anti-loss contract: one MISMATCH
@@ -135,7 +138,7 @@ func TestUnitScanRetainsMultipleFindings(t *testing.T) {
 	grEnableMissionLayout(t, root)
 	id := grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate")
 
-	grSubmitOK(t, root, id, "unit:auth", unitScanMismatchReport())
+	grSubmitOK(t, root, id, "unit:auth", unitScanMismatchReport(t, root, mustLoadRun(t, root, id)))
 
 	run := mustLoadRun(t, root, id)
 	states, err := gaterun.LoadSessionStates(root, run)

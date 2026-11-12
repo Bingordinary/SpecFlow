@@ -152,7 +152,7 @@ func TestVerifyJudgmentPinsProviderContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := judgments.Check(root, ref, TargetCandidate, run.Protocol); err != nil {
+	if err := judgments.Check(root, ref, TargetCandidate); err != nil {
 		t.Fatalf("fresh judgment rejected: %v", err)
 	}
 
@@ -162,7 +162,7 @@ func TestVerifyJudgmentPinsProviderContract(t *testing.T) {
     source: [Narrative]
     contract: {invariants: [login changed]}
 `, "")
-	if err := judgments.Check(root, ref, TargetCandidate, run.Protocol); err == nil || !strings.Contains(err.Error(), "auth.login_api contract changed") {
+	if err := judgments.Check(root, ref, TargetCandidate); err == nil || !strings.Contains(err.Error(), "auth.login_api contract changed") {
 		t.Fatalf("provider contract change must stale the consumer judgment, got %v", err)
 	}
 }

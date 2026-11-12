@@ -67,10 +67,6 @@ func VerifyConclusionStates(root, targetKind string, cache *cacheFile) ([]Conclu
 	if len(state.Records) == 0 {
 		return nil, fmt.Errorf("verify cache has no judgment references")
 	}
-	protocol, err := judgments.Protocol(root, "verify", targetKind)
-	if err != nil {
-		return nil, err
-	}
 	keys := make([]string, 0, len(state.Records))
 	for key := range state.Records {
 		keys = append(keys, key)
@@ -87,7 +83,7 @@ func VerifyConclusionStates(root, targetKind string, cache *cacheFile) ([]Conclu
 			states = append(states, st)
 			continue
 		}
-		if err := judgments.Verify(root, r, binding.Reference, binding.Layer, protocol); err != nil {
+		if err := judgments.Verify(root, r, binding.Reference, binding.Layer); err != nil {
 			st.Live = false
 			st.Reason = fmt.Sprintf("%s: %v", key, err)
 			states = append(states, st)
@@ -144,6 +140,26 @@ func VerifyConclusionStates(root, targetKind string, cache *cacheFile) ([]Conclu
 			states = append(states, ConclusionState{Key: "cross", Live: false,
 				Reason: fmt.Sprintf("cross: synthesis evidence changed: %s", pin.Path)})
 			break
+		}
+	}
+	// The final synthesis is the one verify conclusion with no judgment
+	// record, so its standard lives in the cache's `standards.cross` entry.
+	// A cache that records a synthesis conclusion but no standard cannot
+	// prove the relationship verdict was judged by the deployed rules; a
+	// moved standard makes it stale (framework/validation_cache.md
+	// §Standard binding).
+	if hasRecordedSynthesis(cache) {
+		recorded, ok := cache.Standards[validateSynthesisStandardKey]
+		if !ok || strings.TrimSpace(recorded) == "" {
+			return nil, fmt.Errorf("verify cache records a final-synthesis conclusion but no final-synthesis judging standard — run `reverify@%s` (the derived repair re-runs the synthesis)", cache.Unit)
+		}
+		current, err := judgments.VerifySessionFingerprint(root, judgments.ProtocolSessionCross)
+		if err != nil {
+			return nil, err
+		}
+		if recorded != current {
+			states = append(states, ConclusionState{Key: validateSynthesisStandardKey, Live: false,
+				Reason: "cross: the final-synthesis judging standard changed"})
 		}
 	}
 	for _, entry := range cache.Files {
@@ -279,6 +295,43 @@ func hasRecordedRelationships(cache *cacheFile) bool {
 	return len(state.Relationships) > 0
 }
 
+// hasRecordedSynthesis reports whether a verify cache carries a final-synthesis
+// conclusion: recorded relationship verdicts or a recorded `cross` status (a
+// synthesis that disposed findings without an assigned relationship). The
+// synthesis has no judgment record, so its standard is the cache's
+// `standards.cross` entry.
+func hasRecordedSynthesis(cache *cacheFile) bool {
+	if hasRecordedRelationships(cache) {
+		return true
+	}
+	if strings.TrimSpace(cache.Judgments) == "" {
+		return false
+	}
+	var state struct {
+		LogicalStatus map[string]string `json:"logical_status"`
+		Findings      []struct {
+			SourceKey string `json:"source_key"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(cache.Judgments), &state); err != nil {
+		return false
+	}
+	if _, ok := state.LogicalStatus[validateSynthesisStandardKey]; ok {
+		return true
+	}
+	for key := range state.LogicalStatus {
+		if strings.HasPrefix(key, "relationship:") {
+			return true
+		}
+	}
+	for _, finding := range state.Findings {
+		if finding.SourceKey == validateSynthesisStandardKey {
+			return true
+		}
+	}
+	return false
+}
+
 // validateSynthesisStandardKey is the cache key of the final synthesis
 // standard. It matches the gate-run cross key; the synthesis is a session, not
 // a coverage group, and binds its own section set.
@@ -403,8 +456,8 @@ func verifyStandard(root, targetKind string, cache *cacheFile) error {
 	sort.Strings(missing)
 	sort.Strings(moved)
 	sort.Strings(unknown)
-	if _, ok := cache.Standards[validateSynthesisStandardKey]; !ok && hasRecordedRelationships(cache) {
-		return fmt.Errorf("the cache records relationship conclusions but no final-synthesis judging standard — run the full command")
+	if _, ok := cache.Standards[validateSynthesisStandardKey]; !ok && hasRecordedSynthesis(cache) {
+		return fmt.Errorf("the cache records a final-synthesis conclusion but no final-synthesis judging standard — run `revalidate@%s` (the derived plan re-runs the synthesis)", cache.Unit)
 	}
 	switch {
 	case len(unknown) > 0:
@@ -454,7 +507,7 @@ func ValidateStandardStatuses(repoRoot, unitName string) ([]ValidateStandardStat
 	for _, key := range keys {
 		recorded, ok := cache.Standards[key]
 		switch {
-		case !ok && key == validateSynthesisStandardKey && hasRecordedRelationships(cache):
+		case !ok && key == validateSynthesisStandardKey && hasRecordedSynthesis(cache):
 			out = append(out, ValidateStandardStatus{Key: key, Status: ValidateStandardMissing})
 		case !ok && key == validateSynthesisStandardKey:
 			out = append(out, ValidateStandardStatus{Key: key, Status: ValidateStandardNotRun})

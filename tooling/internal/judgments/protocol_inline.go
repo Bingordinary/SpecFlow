@@ -193,6 +193,122 @@ func FingerprintChunks(chunks []ProtocolChunk) string {
 	return Digest(content)
 }
 
+// VerifySessionKinds lists the verify session classes that bind their own
+// judging standard. The final synthesis binds its own section set too, so a
+// change to a Step, the Quality Lens Standard, or a synthesis-only section
+// re-runs exactly the kinds that apply it, while a shared-document edit
+// re-runs every kind (framework/validation_cache.md §Standard binding).
+var VerifySessionKinds = []string{
+	ProtocolSessionItem,
+	ProtocolSessionUnit,
+	ProtocolSessionCode,
+	ProtocolSessionDesign,
+	ProtocolSessionArchitecture,
+	ProtocolSessionCross,
+}
+
+// verifyClassSections lists, per document, the sections that belong to one
+// verify session class instead of the shared baseline: the alignment Steps are
+// applied by the item and unit sessions, the Quality Lens Standard by the
+// quality sessions, and the final synthesis's own two sections by the final
+// synthesis. Every class's own sections are added back by
+// VerifySessionFingerprint through ProtocolSectionsFor, so a class-section edit
+// re-runs exactly the classes that apply it while a genuinely shared-document
+// edit re-runs every class. The severity policy's synthesis sections stay in
+// the shared baseline because every verifier grades findings under them.
+func verifyClassSections() map[string][]ProtocolSection {
+	steps := []ProtocolSection{{File: "unit_verify_checklist.md", Level: 2, Heading: "Quality Lens Standard"}}
+	for step := 1; step <= 7; step++ {
+		steps = append(steps, ProtocolSection{File: "unit_verify_checklist.md", Level: 2, Heading: fmt.Sprintf("Step %d", step)})
+	}
+	return map[string][]ProtocolSection{
+		"unit_verify_checklist.md": steps,
+		"verification_scope.md": {
+			{File: "verification_scope.md", Level: 3, Heading: "Final synthesis"},
+			{File: "verification_scope.md", Level: 3, Heading: "Relationship vocabulary"},
+		},
+	}
+}
+
+// VerifySessionFingerprint hashes one verify session class's judging standard:
+// the shared verify baseline — every verify protocol document's judging text
+// minus the mechanism sections and minus the sections that belong to one
+// session class — plus the sections that class's mission inlines. A shared
+// document edit re-runs every class; a Step edit re-runs the item and unit
+// sessions that line it in; a Quality Lens Standard edit re-runs the quality
+// sessions; a final-synthesis section edit re-runs the synthesis.
+func VerifySessionFingerprint(root, kind string) (string, error) {
+	if !stringInSlice(VerifySessionKinds, kind) {
+		return "", fmt.Errorf("no verify session standard is defined for kind %q", kind)
+	}
+	layout, err := specflowlayout.Resolve(root)
+	if err != nil {
+		// A root with no SpecFlow layout is not a deployed project: there is
+		// no judging text to bind, and the version-only digest keeps
+		// non-project tooling deterministic. Once a layout resolves, a
+		// missing judging document is a broken install and fails closed.
+		return Digest([]byte(ProtocolSectionVersion)), nil
+	}
+	classSections := verifyClassSections()
+	var chunks []ProtocolChunk
+	for _, name := range ProtocolDocuments("verify", "unit") {
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(layout.FrameworkRoot), filepath.FromSlash(name)))
+		if err != nil {
+			return "", fmt.Errorf("read protocol document %s: %w", name, err)
+		}
+		criteria, err := withoutMechanismSections(string(raw), mechanismSections[name])
+		if err != nil {
+			return "", fmt.Errorf("framework/%s: %w", name, err)
+		}
+		if own := classSections[name]; len(own) > 0 {
+			criteria, err = withoutSections(criteria, own)
+			if err != nil {
+				return "", fmt.Errorf("framework/%s: %w", name, err)
+			}
+		}
+		source := filepath.ToSlash(filepath.Join(filepath.FromSlash(layout.FrameworkRoot), filepath.FromSlash(name)))
+		chunks = append(chunks, ProtocolChunk{Source: source, Heading: name, Content: StripAtomMarkers(criteria)})
+	}
+	sections, err := ProtocolSectionsFor("verify", "unit", kind, nil)
+	if err != nil {
+		return "", err
+	}
+	kindChunks, err := InlineProtocol(root, layout.FrameworkRoot, sections)
+	if err != nil {
+		return "", err
+	}
+	return FingerprintChunks(append(chunks, kindChunks...)), nil
+}
+
+// sessionKindOfRecord maps a stored record kind to the verify session class
+// whose judging standard it binds. Records exist only for verify judgments, so
+// the mapping is total over the record kinds.
+func sessionKindOfRecord(kind string) string {
+	switch kind {
+	case Item:
+		return ProtocolSessionItem
+	case Unit:
+		return ProtocolSessionUnit
+	case Code:
+		return ProtocolSessionCode
+	case Design:
+		return ProtocolSessionDesign
+	case Architecture:
+		return ProtocolSessionArchitecture
+	}
+	return ""
+}
+
+// stringInSlice reports whether value is one of values.
+func stringInSlice(values []string, value string) bool {
+	for _, v := range values {
+		if v == value {
+			return true
+		}
+	}
+	return false
+}
+
 // UnitValidateGroupFingerprint hashes one unit validate coverage group's
 // judging standard: the shared judging baseline plus the group's own check
 // sections. The shared baseline is every unit validate protocol document's

@@ -53,7 +53,7 @@ func sharedFinish(t *testing.T, root, id string) {
 		}
 		report := grDefaultQualityReport(run, ck)
 		if ck.Kind == gaterun.SessionKindUnit {
-			report = grVerifyUnitScanReport(ck.Key)
+			report = grVerifyUnitScanReport(t, root, run, ck.Key)
 		}
 		if gaterun.IsItemKind(ck.Kind) {
 			report = grVerifyItemReport(ck.Key, run.RequiredFiles[0], "contracts.js")
@@ -439,7 +439,7 @@ func TestSharedLifecyclePreservesImmutableRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	public := orderCache.Records["code:contracts.js"]
-	if err := judgments.Check(root, public.Reference, "candidate", fixtureVerifyProtocol(t, root)); err != nil {
+	if err := judgments.Check(root, public.Reference, "candidate"); err != nil {
 		t.Fatal("removal deleted a shared record", err)
 	}
 	if _, err := judgments.Load(root, before.Records["item:auth:auth.core"].Reference); err != nil {
@@ -672,7 +672,7 @@ func TestTargetedCandidateInvalidationKeepsDifferentStableContext(t *testing.T) 
 	synthesisPromote(t, root, "auth")
 	order := grPlan(t, root, "--gate", "verify", "--unit", "order", "--target", "candidate")
 	sharedFinish(t, root, order)
-	protocol, perr := judgments.Protocol(root, "verify", "unit")
+	protocol, perr := judgments.VerifySessionFingerprint(root, judgments.ProtocolSessionItem)
 	if perr != nil {
 		t.Fatal(perr)
 	}
@@ -692,7 +692,7 @@ func TestTargetedCandidateInvalidationKeepsDifferentStableContext(t *testing.T) 
 	if err := runGateInvalidate([]string{"--repo-root", root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--check", "auth.core"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	if err := judgments.Check(root, stable, "stable", fixtureVerifyProtocol(t, root)); err != nil {
+	if err := judgments.Check(root, stable, "stable"); err != nil {
 		t.Fatalf("different stable context was invalidated: %v", err)
 	}
 	if check, err := checkUnitVerifyMerged(freshDerivation(t, root), root, "order", "candidate"); err != nil || !check.Fresh {
@@ -707,7 +707,7 @@ func TestArchitectureDeferralCanBeRetainedByOwner(t *testing.T) {
 	for _, ck := range run.Coverage {
 		report := grDefaultQualityReport(run, ck)
 		if ck.Kind == gaterun.SessionKindUnit {
-			report = grVerifyUnitScanReport(ck.Key)
+			report = grVerifyUnitScanReport(t, root, run, ck.Key)
 		}
 		if gaterun.IsItemKind(ck.Kind) {
 			report = grVerifyItemReport(ck.Key, main, "contracts.js")
@@ -755,7 +755,7 @@ func TestArchitectureDeferralCanBeRetainedByOwner(t *testing.T) {
 		}
 		report := grDefaultQualityReport(owner, ck)
 		if ck.Kind == gaterun.SessionKindUnit {
-			report = grVerifyUnitScanReport(ck.Key)
+			report = grVerifyUnitScanReport(t, root, owner, ck.Key)
 		}
 		if gaterun.IsItemKind(ck.Kind) {
 			report = grVerifyItemReport(ck.Key, owner.RequiredFiles[0], "contracts.js")

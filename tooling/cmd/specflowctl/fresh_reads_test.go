@@ -6,7 +6,6 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
@@ -41,7 +40,7 @@ func TestFreshReadsDoNotGrowWithStoreSize(t *testing.T) {
 	// sharedFinish drives every key to accepted and finalizes the run.
 	sharedFinish(t, root, runID)
 
-	protocol, err := judgments.Protocol(root, gaterun.GateVerify, gaterun.TargetKindUnit)
+	protocol, err := judgments.VerifySessionFingerprint(root, judgments.ProtocolSessionCode)
 	if err != nil {
 		t.Fatal(err)
 	}

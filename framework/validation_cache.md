@@ -38,7 +38,9 @@ p3_count: 0
 timestamp: "2026-06-30T10:00:00Z"
 gate_run: 20260916-120000-3f9a1c   # audit: the gate run whose input snapshot this cache was finalized against (see §Write Rules → Tooled writes); never gated
 standard: 9f1c...     # rule validate caches only: the judging standard this conclusion was made under (see §Standard binding)
-standards:            # unit validate caches only: one judging standard per coverage group, plus cross when the cache carries a final-synthesis conclusion
+standards:            # per-conclusion standard binding for conclusions with no judgment record
+  # unit validate: one judging standard per coverage group, plus cross when the cache carries a final-synthesis conclusion
+  # verify: only cross, the final synthesis's standard
   acceptance: 4d2e...
   cross: 7a10...      # only when the cache records a final synthesis conclusion
   design: 81c3...
@@ -104,7 +106,7 @@ There is no migration path. A unit cache without `pin_format` lacks the
 promise-pin format marker: `fresh` reports it `INVALID`, `promote` rejects it,
 and a partial-run plan cannot carry it as a baseline. A validate plan covers
 the full scope instead; a verify plan refuses it and directs the full command.
-`judgments.RecordVersion` 4 is the current record format;
+`judgments.RecordVersion` 5 is the current record format;
 a record in another version is rejected when loaded.
 
 The `GATE_JUDGMENTS` block is the machine-readable baseline for partial-run synthesis. The current judgment schema is 5 (unit validate and unit verify); a cache in another version is rejected and requires a full run. It records the complete effective logical-status map, canonical retained findings, their complete source/affected-key sets, each finding's canonical renderable detail, the checked relationship names and `relationship:<name>` statuses, the accepted synthesis digest, the synthesis's supplied-evidence pins (`synthesis_evidence`, unit verify), and (merged verify caches) the run's deferred findings. A unit validate recovery additionally records the run's `baseline_dispositions` — how each injected baseline finding was disposed (`fixed` / `not fixed` / `superseded`, with evidence); the unresolved findings themselves are retained in `findings` under their original ids, so the next recovery plan re-injects exactly them. A unit validate cache additionally records the run's per-object catalog `validate_objects` (the catalog derived from the spec's item/promise/source/affects fields, the unit's evidence record, plus the run's derived rule references — the stable global rules that apply by default and are never declared in `rule_refs`, and any rule file the input manifest supplied — each key with its complete read set; a holistic judgment that reads the whole unit design records `unit:<unit>` and, when the unit carries an evidence record, its evidence ref; every evidence-record section records its `Keys:` ref (item)); `file_presence` records whether every declared `affects.files` path existed when the baseline was judged. The check verdict is the judgment and covers every object the check declares; no per-object verdict table is stored. Freshness requires every current catalog key to be recorded with the same check assignment and read set, and every recorded file-presence entry to match the current filesystem; a missing object, a changed check assignment, a moved dependency surface, or a changed file presence is STALE. `gate-finalize` records the catalog; agents never edit it. The `findings` array carries only gate-driving findings — those owned by the unit or unassigned; findings deferred to another unit (quality ownership) are recorded in the optional `deferred_findings` array for audit and are never carried into a later run of this unit (routing lives in the deferred-findings ledger, see below). For rule validate runs, `gate-finalize` records the single accepted checks session's complete logical-status map; rule targets have no partial run. For unit gates, a merge group contributes its terminal retained finding once with the union of the group's logical keys. `gate-plan` copies carried judgments from this block into the new run so the final synthesis sees the complete logical result set, including the original finding detail needed for evidence-backed retention, suppression, or merge. `gate-finalize` renders every terminal retained finding that no accepted session report already contains — a carried judgment, a deferral routed in from another unit, or an unfixed baseline finding — into the new human-readable body exactly once. A cache without the current judgment schema cannot supply carried semantic results or a complete findings body and therefore cannot be used for a partial run; the planner requires a full run instead of guessing from prose.
@@ -139,7 +141,7 @@ The `GATE_JUDGMENTS` block is the machine-readable baseline for partial-run synt
 
 **Gate run binding:** `gate_run` is the audit id of the gate run whose input snapshot this cache was finalized against (see §Write Rules → Tooled writes). It identifies the run's fixed inputs — it is not executor identity and proves nothing about the execution shape (see `framework/verification_scope.md` §Guarantee Boundary). `fresh` and `promote` never read it, and caches written before the field existed remain valid (absent = no run recorded).
 
-**Delta cache (validate):** a validate delta cache carries no review record. The tooling derives its scope from the recorded per-object catalog, read sets, and per-group judging standards: an object not in the baseline catalog, or whose read set changed, re-runs; its group is selected, and the group's session receives only the re-run objects; every other object carries. A moved check-section standard re-runs its whole group, a shared-document edit re-runs every group that reads it, and a moved final-synthesis standard re-runs the synthesis over the carried local results. Rule alignment is one object per rule × `##` section plus one `rule:<id>:evidence` object and one `global:rule-interactions` object for a cross-section violation; cross-unit consistency is one object per consumer promise × provider promise. Every evidence-record section is bound by its `Keys:` block with exactly one item key. If every object re-runs (or an unrecorded/unattributable input fails the plan), the run covers the full scope and is recorded as a full run. A unit validate repair uses the same object comparison but forces every object of a failed check, every failed relationship, persisted invalidations, and baseline-finding checks; unchanged pass-check objects carry, and the cache records `basis: repair`. A `file:` read compares the recorded `file_presence`, so an added or removed declared file re-runs Check 6/9. Rule, provider, and evidence-record changes are matched to the run's actual references, never to path substrings. A carried judgment's recorded content is unchanged at finalize, so the cache's evidence is its own audit trail. A verify delta also carries no review record: its re-run scope is derived from each conclusion's own judgment-record pins (§Conclusion-bound verify freshness).
+**Delta cache (validate):** a validate delta cache carries no review record. The tooling derives its scope from the recorded per-object catalog, read sets, and per-group judging standards: an object not in the baseline catalog, or whose read set changed, re-runs; its group is selected, and the group's session receives only the re-run objects; every other object carries. A moved check-section standard re-runs its whole group, a shared-document edit re-runs every group that reads it, and a moved final-synthesis standard re-runs the synthesis over the carried local results. Rule alignment is one object per rule × `##` section plus one `rule:<id>:evidence` object and one `global:rule-interactions` object for a cross-section violation; cross-unit consistency is one object per consumer promise × provider promise. Every evidence-record section is bound by its `Keys:` block with exactly one item key. If every object re-runs (or an unrecorded/unattributable input fails the plan), the run covers the full scope and is recorded as a full run. A unit validate repair uses the same object comparison but forces every object of a failed check, every failed relationship, persisted invalidations, and baseline-finding checks; unchanged pass-check objects carry, and the cache records `basis: repair`. A `file:` read compares the recorded `file_presence`, so an added or removed declared file re-runs Check 6/9. Rule, provider, and evidence-record changes are matched to the run's actual references, never to path substrings. A carried judgment's recorded content is unchanged at finalize, so the cache's evidence is its own audit trail. A verify delta also carries no review record: its re-run scope is derived from each conclusion's own judgment-record pins and, for the final synthesis, the cache's `standards.cross` entry (§Conclusion-bound verify freshness, §Standard binding).
 
 Each `files` entry records content evidence:
 
@@ -200,6 +202,8 @@ the run's recorded input surface:
 - the record's review protocol is the deployed one;
 - the record is not explicitly invalidated;
 - the records it references are themselves live;
+- the final synthesis, when the cache carries one, has a `standards.cross`
+  entry matching the deployed final-synthesis standard (§Standard binding);
 - the final synthesis's own evidence pins (`synthesis_evidence` in the
   GATE_JUDGMENTS block) are unchanged. Those pins are the supplied evidence
   inputs the synthesis read but that no individual conclusion owns; a change to
@@ -233,10 +237,16 @@ new keys (current coverage keys absent from the baseline), the forced keys
 invalidations, and failed relationships), and carries the rest. A file the run
 merely read never re-runs a conclusion, so a newly supplied evidence input
 creates no coverage key and forces nothing; a file the key now requires does
-re-run it. When a local conclusion re-runs,
-the final synthesis runs again over the new results (the assigned and standing
-relationships re-check) instead of carrying a verdict over superseded input. A
-run whose scope is empty and whose synthesis evidence is unchanged is fresh:
+re-run it. A verify delta re-checks a standing relationship exactly when its
+consumed keys re-ran, a pinned synthesis evidence input changed, or the
+relationship itself failed; every other standing relationship carries its
+recorded verdict. When the final-synthesis judging standard moves, the
+synthesis re-runs over the carried local results and every standing
+relationship re-checks: the synthesis has no judgment record, so its standard
+is the cache's `standards.cross` entry. The local classes' standards do not
+include the synthesis-only sections, so they carry while the synthesis
+re-runs. A run whose scope is empty and whose synthesis evidence and
+final-synthesis standard are unchanged is fresh:
 "cache is fresh — no conclusion's evidence changed". Conclusion-bound reuse has
 one blind spot — a semantic dependency no conclusion declared — and the
 plan reports it: recorded input-surface files that changed while neither a
@@ -252,10 +262,26 @@ sections that describe how a run is planned, executed, recorded or terminated
 removed (`framework/spec_flow_review.md` §2.17). Each gate binds that standard
 where its own reuse happens:
 
-- **verify** binds it per judgment record. Every record stores the protocol
-  fingerprint it was made under, and a record whose fingerprint is not the
-  deployed one is unusable — for its cache and for every other consumer of the
-  shared record (see §Shared verify records).
+- **verify** binds it per session class. Every judgment record stores the
+  fingerprint of its own class's standard: a **shared verify baseline** — every
+  verify protocol document's judging text minus the mechanism sections and
+  minus the sections that belong to one class — plus the sections that class's
+  mission inlines (the alignment Steps for the item and unit sessions, the
+  Quality Lens Standard for the quality sessions, and the final synthesis's
+  `verification_scope.md` §Final synthesis and §Relationship vocabulary
+  sections; the severity policy's synthesis sections stay in the shared
+  baseline because every verifier grades findings under them). The final
+  synthesis has no judgment record, so the cache records that class's standard
+  under the `standards.cross` entry; a synthesis-only section edit changes
+  that entry and re-runs the synthesis over the carried local results. A
+  shared-document edit re-runs every class; a Step edit re-runs the sessions
+  that line it in; a Quality Lens Standard edit re-runs the quality sessions; a
+  final-synthesis section edit re-runs the synthesis. A record whose
+  fingerprint is not the deployed fingerprint of its class is unusable — for
+  its cache and for every other consumer of the shared record (see §Shared
+  verify records). A verify cache that records a synthesis conclusion but no
+  `cross` standard, or a recorded `cross` that is not the deployed one, is
+  stale and re-runs the synthesis.
 - **unit validate** binds it per session group. Every group's standard is a
   **shared judging baseline** plus that group's own check sections. The shared
   baseline is the judging text of the unit validate protocol documents with
@@ -422,7 +448,10 @@ field is part of its region, so editing `source` re-runs the record that pins
 the region. A promise's source blocks are recorded in the promise state's
 `source_pins`; an item's source blocks are pinned in the item judgment. Both
 use the existing `region:subsection` content identity, not a second anchor
-type. Every other record input is
+type. Region content identities are computed over normalized text — line
+endings normalized to LF and a trailing newline ensured, the same
+normalization whole-file hashes use — so a CRLF checkout of unchanged content
+does not change a region pin. Every other record input is
 pinned by its own object: a public code judgment pins the reviewed file and
 the applicable rules whole-file (**not** the run's supplied evidence inputs:
 they stay readable but never define the record's dependencies, so neither an
@@ -438,11 +467,86 @@ shallower level), a promise entry (`region:promise:<id>:<cid>`, the promise's
 acceptance-item edit, or a narrative or promise edit the judgment never
 declared, re-runs nothing while an edit to a declared anchor re-runs the
 judgment, and an anchor that no longer resolves fails closed and re-runs it;
-an architecture judgment and the unit-level
-alignment scan (`unit:<unit>`) pin the whole unit main spec, every declared
-code-surface file, and the unit's own evidence record whole-file — the unit's
-recorded truth includes its evidence record. An unknown region type
-fails closed.
+an architecture judgment is a whole-unit code-structure verdict, so every
+declared code-surface file and the unit's own evidence record stay pinned
+whole-file — a code change reopens it — while its spec side is pinned at
+exactly the `Spec basis` anchors the report declared, so an edit elsewhere in
+the spec does not re-run it. The unit-level alignment scan (`unit:<unit>`)
+keeps one aggregate verdict and records its checklist work as rows instead
+(§Unit-scan row bookkeeping). An unknown region type fails closed.
+
+### Unit-scan row bookkeeping
+
+The unit-level alignment scan (`unit:<unit>`) is one conclusion with one
+aggregate verdict, but its evaluation is recorded as a row catalog so a change
+invalidates exactly the rows that read it instead of the whole unit-wide
+judgment (`framework/verification_scope.md` §Coverage Model → Unit-scan rows):
+
+- **Row kinds.** One declaration row per structural-declaration source — a
+  promise entry (`decl:promise:<promise-id>`) or an evidence-record section
+  (`decl:evidence:<item-id>`) — one surplus row per declared code file
+  (`surplus:<file>`), one non-runnable row per `runnable: no` acceptance item
+  (`non_runnable:<item-id>`), and one coverage row for the Step 5 Part 2
+  runnable-set assessment (`coverage:<item-set-id>`). The coverage row's id is
+  derived from the complete acceptance-item set (each item id and region
+  content), so any item addition, removal or content change produces a new row
+  identity. The other row ids are stable identities; the coverage row's id is
+  the item-set content identity. The catalog is derived mechanically from the
+  unit spec's structured content and fixed at plan time, so a row the catalog
+  declares cannot be silently skipped.
+- **Row pins.** Each row records its own dependency pins: a declaration row
+  pins its spec region (`region:promise:<id>:<cid>` or
+  `region:section:<heading>:<cid>` on the evidence record) plus the code files
+  the reviewer verified the declarations in (whole-file); a surplus row pins
+  its code file whole-file plus every promise and evidence-section region (its
+  undeclared-behavior question is answered against the complete declaration
+  catalog); a non-runnable row pins its item region; the coverage row pins
+  every acceptance-item region (its runnable-set question is answered against
+  the complete acceptance-item set). Provider contracts stay row-independent
+  promise pins on the record: a provider contract change reopens the whole
+  scan.
+- **Row verdicts.** `match | undetermined | mismatch` (declaration),
+  `clean | surplus` (surplus), `ok | defect` (non-runnable and coverage). The
+  aggregate verdict is recomposed from the rows: any mismatch or surplus row is
+  a `MISMATCH`, any undetermined or defective row is a `CANNOT_DETERMINE`, and
+  only all-clean rows are `ALIGNED`. A mismatched or surplus row carries at
+  least one finding bound to `unit:<unit>`.
+- **Delta scope.** The scope is derived from the record itself, not only when
+  the record fails to verify. Row-level scope is available only for a passing
+  conclusion: a baseline whose logical status is not `pass`, or whose aggregate
+  verdict is `MISMATCH`, re-runs whole, because a failed conclusion must be
+  re-judged rather than carried. The record-level pins — the session-class
+  standard fingerprint and the row-independent promise pins — are not rows,
+  and any one of them failing re-runs the whole conclusion even when every
+  row's pins hold. Otherwise the run re-runs the rows whose own pins no longer
+  hold, plus current catalog rows the baseline never judged; a change to the
+  acceptance-item set produces a new coverage row, and a change to the
+  declaration-row set (a promise entry or evidence-record section added or
+  removed) reopens every surplus row too, because the surplus question is
+  answered against the complete declaration catalog and a recorded row's pin
+  list cannot see a declaration source that did not exist when it was judged.
+  A declared code surface that gained a file is a whole-conclusion trigger: the
+  shared required-evidence check runs before row scoping, because a new
+  implementation file can change a Step 1 declaration verdict and the new
+  surplus row alone judges only Step 5 Part A.
+  The scan session receives only the re-run rows; every other row carries from
+  the baseline record, and the finalized record merges both sides. The
+  plan-time catalog is the mission's assigned row set: a full report judges the
+  complete catalog, a row-scoped report judges the re-run subset, and
+  submission rejects a report whose row set differs — a missing or foreign row
+  is a submission error, not a finalize-time dead run. An explicit
+  `--rerun unit:<unit>` re-judges the whole catalog and is never narrowed to
+  the derived row set. When every row re-runs (or the record is unusable), the
+  conclusion re-runs whole. The recorded report of a row-scoped run carries
+  only the re-run rows' `row` lines; the aggregate summary lines and the
+  overall verdict line belong to a full report.
+- **Freshness.** `fresh` and `promote` require every row's pins to hold
+  (the record is live when no row is dead); the delta planner uses the same
+  row-level pins to derive the re-run set, so a carried row's judgment can
+  never rest on changed content. A cache that records a synthesis conclusion
+  also requires its `standards.cross` entry to match the deployed
+  final-synthesis standard (§Standard binding); a missing or moved entry makes
+  the synthesis conclusion stale.
 
 `mode: full` means a complete run of all checks/steps — the judgment set is complete relative to the declared object catalog, not a subset. Only complete-coverage runs publish caches: full runs (`validate@{target}` / `verify@{unit}`), delta runs (`revalidate@{unit}` / `reverify@{unit}`), and repair runs (`revalidate@{unit}` over a unit validate failure record; `reverify@{unit}` over a failure record or salvaged baseline; see `framework/verification_scope.md` §Delta Runs). Targeted runs (`:check-{n}` / `:{keyword}`) never publish a result cache, so `mode` is always `full`; a targeted P0/P1 may only delete a pass cache or add machine-owned invalidation metadata to a failure record through `gate-invalidate`. The `basis` field distinguishes the three complete-result writers for audit: `basis: full` (or absent) means the plan covered the full scope — a full run, or a validate delta plan that upgraded to the full scope; `basis: delta` means the run re-executed the conclusions whose own evidence pins no longer held and carried the rest over from a pass baseline (a validate delta that re-ran a subset of objects or a verify delta from a pass baseline); `basis: repair` means a unit validate run recovered from a **failure record**, or a verify run recovered from a **failure record** or from a **salvaged pass cache** — it re-executed the failed judgments, the persisted invalidated checks (for verify, the invalidated judgment records), and explicit `--rerun` overrides, and carried the rest over (see §Format → Targeted invalidation contract and `framework/verification_scope.md` §Delta Runs). A **validate** cache carries no review record: the tooling derives its scope mechanically; `basis: delta` means the run re-ran a subset of objects, `basis: repair` means a unit validate run repaired a failure record, and `basis: full` means the plan covered the full scope. A verify delta cache derives its scope from the conclusion records.
 
@@ -481,6 +585,8 @@ p3_count: 0
 blocking: false             # required on a failure record (true); optional on a pass cache (absent = not blocking)
 target: candidate           # candidate | stable
 timestamp: "2026-06-30T10:00:00Z"
+standards:                  # the final synthesis has no judgment record; its standard is bound here
+  cross: sha256:7a10...     # required because this cache records a synthesis conclusion
 files:
   - path: src/auth/login.go
     hash: sha256:def456...
@@ -511,7 +617,7 @@ files:
       - check: "relationship:contract_consistency"
 ---
 <!-- GATE_JUDGMENTS_BEGIN
-{"schema_version":5,"logical_status":{"item:user_auth:AUTH-AC-001":"pass","unit:user_auth":"pass","code:src/auth/login.go":"pass","design:user_auth:src/auth/login.go":"pass","architecture:user_auth":"pass"},"records":{"code:src/auth/login.go":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/code/_/src/auth/login.go/_","layer":"candidate","source":"reused"},"design:user_auth:src/auth/login.go":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/design/user_auth/src/auth/login.go/_","layer":"candidate","source":"executed"},"architecture:user_auth":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/architecture/user_auth/_/_","layer":"candidate","source":"executed"},"item:user_auth:AUTH-AC-001":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/item/user_auth/<subject digest>/<spec context>","layer":"candidate","source":"executed"},"unit:user_auth":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/unit/user_auth/_/_","layer":"candidate","source":"executed"}},"findings":[],"synthesis_digest":"sha256:...","deferred_findings":[],"relationships":["contract_consistency"]}
+{"schema_version":5,"logical_status":{"item:user_auth:AUTH-AC-001":"pass","unit:user_auth":"pass","code:src/auth/login.go":"pass","design:user_auth:src/auth/login.go":"pass","architecture:user_auth":"pass","cross":"pass"},"records":{"code:src/auth/login.go":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/code/_/src/auth/login.go/_","layer":"candidate","source":"reused"},"design:user_auth:src/auth/login.go":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/design/user_auth/src/auth/login.go/_","layer":"candidate","source":"executed"},"architecture:user_auth":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/architecture/user_auth/_/_","layer":"candidate","source":"executed"},"item:user_auth:AUTH-AC-001":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/item/user_auth/<subject digest>/<spec context>","layer":"candidate","source":"executed"},"unit:user_auth":{"id":"<digest>","digest":"<digest>","slot":"<protocol>/unit/user_auth/_/_","layer":"candidate","source":"executed"}},"findings":[],"synthesis_digest":"sha256:...","deferred_findings":[],"relationships":["contract_consistency"]}
 GATE_JUDGMENTS_END -->
 ## Findings
 
@@ -581,7 +687,7 @@ A carried validate judgment is anchored to unchanged content: a validate delta p
 
 Every candidate full-run FAIL writes a **failure record** for both gates — `result: fail` + `blocking: true`, a findings body, and a per-check `status` map (`pass`/`fail` for every executed judgment; full runs re-execute local checks and may carry unchanged relationship judgments). The record replaces any prior cache: it blocks promote exactly like a missing cache, and it is the failure-recovery baseline. No full-run FAIL deletes a cache.
 
-The uniform rule follows from what a carried-over judgment is anchored to. A partial run may carry a `pass` judgment only when the judgment was executed as a complete check by an independent reviewer, its recorded content is unchanged at finalize, and affected relationships are rechecked against the repaired content; promote still refuses anything but a complete-coverage pass. A validate delta produces `basis: delta` only when every carried object's recorded read refs are unchanged at finalize, so its recorded evidence is the current content. Those conditions hold identically whether the judgment passed inside a failed full run or inside a passed one. A unit validate failure record derives a repair: its failed judgments re-run and its unchanged pass checks carry under the same rule; a rule validate failure record recovers with the full scope; a verify repair re-runs every `fail` judgment, the persisted invalidations, invalidated verify records, the current keys the baseline never declared, and explicit `--rerun` overrides.
+The uniform rule follows from what a carried-over judgment is anchored to. A partial run may carry a `pass` judgment only when the judgment was executed as a complete check by an independent reviewer, its recorded content is unchanged at finalize, and the relationships whose consumed keys re-ran are rechecked against the repaired content; promote still refuses anything but a complete-coverage pass. A validate delta produces `basis: delta` only when every carried object's recorded read refs are unchanged at finalize, so its recorded evidence is the current content. Those conditions hold identically whether the judgment passed inside a failed full run or inside a passed one. A unit validate failure record derives a repair: its failed judgments re-run and its unchanged pass checks carry under the same rule; a rule validate failure record recovers with the full scope; a verify repair re-runs every `fail` judgment, the persisted invalidations, invalidated verify records, the current keys the baseline never declared, and explicit `--rerun` overrides.
 
 Stable-only confirmation FAILs use the same record shape with `target: stable` and `basis: full`.
 
@@ -595,7 +701,7 @@ A unit delta re-run (`re*`) writes or updates the same record on FAIL for both g
 
 The cache format is a byte-exact machine-consumed contract: `hash` and the ordered chunk sequence are recorded verbatim, and `fresh`/`promote` compare whole-file hashes byte-for-byte. Hand transcription of those values is the root of transcription errors (a 64-bit CID typo is silently treated as evidence). Since the values are mechanically derived from file content, they are **computed by the tooling, never supplied by the agent**.
 
-A promote-consumable cache is written by a **coverage gate run**: the input snapshot and the coverage set are fixed before any judgment executes; each session report is validated and recorded as it is submitted; the coverage set is closed mechanically; and the cache is written only if every coverage key is covered (and the final synthesis is accepted when the run requires one — unit validate: assigned relationships, blocking P0/P1 findings, or a moved recorded synthesis standard; verify: assigned relationships or any finding; rule targets never synthesize) and the inputs still verify against the snapshot at the end — unchanged for a promotable write, or salvaged with the drift's affected keys recorded as invalidated (see the Snapshot check below). Verify runs first discover evidence file paths without making judgments, then include them in the plan-time snapshot.
+A promote-consumable cache is written by a **coverage gate run**: the input snapshot and the coverage set are fixed before any judgment executes; each session report is validated and recorded as it is submitted; the coverage set is closed mechanically; and the cache is written only if every coverage key is covered (and the final synthesis is accepted when the run requires one — unit validate: assigned relationships, blocking P0/P1 findings, or a moved recorded synthesis standard; verify: assigned relationships, any finding, or a moved recorded synthesis standard; rule targets never synthesize) and the inputs still verify against the snapshot at the end — unchanged for a promotable write, or salvaged with the drift's affected keys recorded as invalidated (see the Snapshot check below). Verify runs first discover evidence file paths without making judgments, then include them in the plan-time snapshot.
 
 ```
 gate-plan → immutable input snapshot + coverage set → computed reviewer units (one per kind and lens, or per reviewed file for verify quality), joined by the coordinator into sessions (a session's key set is split only on its own over-capacity declaration) → gate-mission (per session) + gate-submit (per session) → gate-mission --final (only when the run requires it: relationships are assigned, or unit validate has blocking P0/P1 findings; verify has any finding) → gate-finalize
@@ -653,7 +759,7 @@ specflowctl gate-submit --run <run_id> --session <session_id> --keys <k1,k2,...>
 specflowctl gate-finalize --run <run_id> [--timestamp ...] [--repo-root PATH]
 ```
 
-- **Coverage closure:** every coverage key must be covered by exactly one accepted session (plus the carried baseline judgments for partial runs). Unit targets require an accepted final synthesis when relationships are assigned, the primary pass produced blocking P0/P1 findings (validate) or any finding (verify), or the recorded synthesis standard moved (validate); a P2/P3-only validate run with no moved synthesis standard finalizes directly. Rule validate derives from its single accepted checks session; its logical-status map must cover every current rule-checklist key exactly once before a cache can be written.
+- **Coverage closure:** every coverage key must be covered by exactly one accepted session (plus the carried baseline judgments for partial runs). Unit targets require an accepted final synthesis when relationships are assigned, the primary pass produced blocking P0/P1 findings (validate) or any finding (verify), or the recorded synthesis standard moved (validate or verify); a P2/P3-only validate run with no moved synthesis standard finalizes directly. Rule validate derives from its single accepted checks session; its logical-status map must cover every current rule-checklist key exactly once before a cache can be written.
 - **Snapshot check:** the tool re-resolves the input surface and compares every entry — path set, layer resolution, content hash — against the snapshot. Evidence assembly is bound to the same snapshot: every freshly computed cache entry must have the whole-file hash recorded for that declaration at `gate-plan`, and the complete input surface is compared again after evidence assembly, before the candidate cache is rendered and published. This is the time-of-check/time-of-use closure: recorded evidence can only describe content the judging sessions actually read. A divergence is classified, and the class decides the outcome:
   - **Content drift** (a recorded file's bytes changed, a logical reference moved to a different layer, or a recorded file disappeared) on a **full run** does not discard the run. The affected coverage keys are computed mechanically — the coverage keys whose plan-time read set intersects the drifted declarations; a verdict can only be influenced by material its session read, and the read set is fixed at plan time and enforced at `gate-submit`. The run is **salvaged**: the result is persisted as the verdicts dictate, the drifted evidence entries are re-bound to their plan-time hashes (the change cannot be localized — the chunk sequence is recorded empty), the affected keys' report keys are written to `invalidated_checks`, and the verify run publishes no judgment record for an invalidated key (an unbound record forces the recovery plan to re-run it). A salvaged **pass** cache is a recovery baseline, never promotable: `fresh` reports it `STALE` until the gate's recovery plan re-runs the invalidated keys and rewrites the evidence (validate: a full-scope `revalidate@{unit}`; verify: `reverify@{unit}`, whose derived repair re-runs exactly those keys). A salvaged **failure record** keeps its unresolved P0/P1 findings: `fresh` reports it `BLOCKED`, or `STALE` when its re-bound evidence no longer matches current content; either way the reason names its findings and the pending keys, and the next recovery plan re-runs the failed and invalidated judgments together (unit validate and verify: the derived repair; rule validate: the full scope).
   - **Structural divergence** — the surface shape itself changed (a ref or surface appeared or disappeared, a new file inside a declared surface, a moved review protocol, an unresolvable surface) or the drift hit a delta/repair run, whose carried keys have no session coverage to re-attribute — rejects the finalize: no cache is written, the run state is deleted, and a new `gate-plan` is required.

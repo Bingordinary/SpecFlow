@@ -61,7 +61,7 @@ func TestCheckVerifyIgnoresInputOnlyFile(t *testing.T) {
 		Coverage:     []string{key},
 		Inputs:       []string{".md", "src/dep.go", "src/input_only.go"},
 		Dependencies: []judgments.Dependency{{Path: ".md", Own: true, Hash: specHash}, {Path: "src/dep.go", Hash: depHash}},
-		Protocol:     testProtocolFor(t, repoRoot, "verify", "unit"),
+		Protocol:     testItemProtocol(t, repoRoot),
 		Verdict:      "ALIGNED",
 		Result:       json.RawMessage("{\"effective_status\":{\"" + key + "\":\"pass\"}}"),
 		Report:       "fixture",
@@ -162,7 +162,7 @@ func TestUncoveredChangedFilesReportsChangedUnpinnedEvidence(t *testing.T) {
 		Coverage:     []string{key},
 		Inputs:       []string{".md", "src/dep.go", "src/input_only.go"},
 		Dependencies: []judgments.Dependency{{Path: ".md", Own: true, Hash: specHash}, {Path: "src/dep.go", Hash: depHash}},
-		Protocol:     testProtocolFor(t, repoRoot, "verify", "unit"),
+		Protocol:     testItemProtocol(t, repoRoot),
 		Verdict:      "ALIGNED",
 		Result:       json.RawMessage("{\"effective_status\":{\"" + key + "\":\"pass\"}}"),
 		Report:       "fixture",
@@ -261,7 +261,7 @@ func TestUncoveredChangedFilesExcludesSynthesisEvidence(t *testing.T) {
 		Coverage:     []string{key},
 		Inputs:       []string{".md", "src/dep.go", "src/input_only.go"},
 		Dependencies: []judgments.Dependency{{Path: ".md", Own: true, Hash: specHash}, {Path: "src/dep.go", Hash: depHash}},
-		Protocol:     testProtocolFor(t, repoRoot, "verify", "unit"),
+		Protocol:     testItemProtocol(t, repoRoot),
 		Verdict:      "ALIGNED",
 		Result:       json.RawMessage("{\"effective_status\":{\"" + key + "\":\"pass\"}}"),
 		Report:       "fixture",
@@ -3767,6 +3767,13 @@ func TestReadGateBaselineCanonicalizesQuotedScalars(t *testing.T) {
 // reusable: the value gate-finalize writes for the same repository. Fixture
 // repositories deploy no framework layout, so both validate targets fall back
 // to the version digest.
+// testItemProtocol is the deployed standard an acceptance-item record binds.
+func testItemProtocol(t *testing.T, repoRoot string) string {
+	t.Helper()
+	testsupport.DeployStandard(t, repoRoot)
+	return judgments.MustVerifySessionFingerprint(repoRoot, judgments.ProtocolSessionItem)
+}
+
 func testProtocolFor(t *testing.T, repoRoot, gate, targetKind string) string {
 	t.Helper()
 	testsupport.DeployStandard(t, repoRoot)
@@ -3939,7 +3946,7 @@ func writeCacheFixtureFile(t *testing.T, p string, data []byte, mode os.FileMode
 					}
 				}
 			}
-			record := judgments.Record{Version: judgments.RecordVersion, Kind: judgments.Item, Unit: cache.Unit, Subject: check.Check, Coverage: []string{check.Check}, Inputs: []string{entry.Path}, Dependencies: []judgments.Dependency{dependency}, Protocol: testProtocolFor(t, root, "verify", "unit"), Verdict: "ALIGNED", Result: func() json.RawMessage {
+			record := judgments.Record{Version: judgments.RecordVersion, Kind: judgments.Item, Unit: cache.Unit, Subject: check.Check, Coverage: []string{check.Check}, Inputs: []string{entry.Path}, Dependencies: []judgments.Dependency{dependency}, Protocol: testItemProtocol(t, root), Verdict: "ALIGNED", Result: func() json.RawMessage {
 				data, _ := json.Marshal(map[string]any{"effective_status": map[string]string{check.Check: "pass"}})
 				return data
 			}(), Report: "fixture", ReportDigest: judgments.Digest([]byte("fixture")), SourceRun: "test"}

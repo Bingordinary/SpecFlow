@@ -103,7 +103,7 @@ func TestOpenDerivesUnitValidateSurface(t *testing.T) {
 	extra := "    affects:\n      files:\n        - docs/notes.md\n"
 	writeUnit(t, repoRoot, "candidate", "auth", "dep", "b_rule_x", "src", extra)
 	writeUnit(t, repoRoot, "candidate", "dep", "none", "none", "src", "")
-	writeFile(t, repoRoot, "docs/specs/units/candidate/evidence/unit_dep.md", "---\nunit: dep\n---\n\n# Evidence\n")
+	writeFile(t, repoRoot, "docs/specs/units/candidate/evidence/unit_dep.md", "---\nunit: dep\n---\n\n# Evidence\n\n## Dep behavior\n\nKeys:\n  - item:dep.core\n\nObserved dep behavior.\n")
 	writeRule(t, repoRoot, "candidate", "b_rule_x")
 	writeRule(t, repoRoot, "candidate", "g_rule_repo")
 	writeRule(t, repoRoot, "stable", "g_rule_repo")

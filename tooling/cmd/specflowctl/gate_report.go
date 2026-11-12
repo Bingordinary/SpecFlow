@@ -37,6 +37,9 @@ type parsedReport struct {
 	// (narrative-block headings and promise entry ids). The design record's
 	// spec pins are derived from them.
 	SpecBasis map[string][]string
+	// Rows is a unit-scan session's checklist row results
+	// (framework/validation_cache.md §Unit-scan row bookkeeping).
+	Rows []gaterun.ScanRowResult
 }
 
 // itemMismatchTypeSet is the fixed MISMATCH type vocabulary of an item
@@ -473,25 +476,203 @@ func parseVerifyUnitReport(run *gaterun.Run, spec *gaterun.SessionSpec, report s
 		return nil, fmt.Errorf("a unit-level scan session judges exactly one key, got %d", len(spec.CheckKeys))
 	}
 	key := spec.CheckKeys[0]
-	token, line, lineIdx, err := extractVerdict(spec, key, report)
+	verdictLines := map[int]bool{}
+	scoped := spec.ScanRowScoped
+	if !scoped {
+		token, line, lineIdx, err := extractVerdict(spec, key, report)
+		if err != nil {
+			return nil, err
+		}
+		if needsReason(spec, token) && !hasReason(line, token) {
+			return nil, fmt.Errorf("check %q verdict %s carries no reason", key, token)
+		}
+		out.Verdicts[key] = token
+		if err := validateUnitScanLines(report); err != nil {
+			return nil, err
+		}
+		if token == "MISMATCH" {
+			lines := strings.Split(report, "\n")
+			block := itemContinuationBlock(lines, lineIdx)
+			if err := parseAlignmentFindings(run, spec, key, block, out); err != nil {
+				return nil, err
+			}
+		}
+		verdictLines[lineIdx] = true
+	} else if err := rejectUnitScanAggregateLines(spec, key, report); err != nil {
+		return nil, err
+	}
+	// Row lines are mandatory in both modes: a full run reports the complete
+	// catalog, a row-scoped delta reports exactly its assigned rows. The
+	// assigned set is carried by the mission, so a missing or foreign row is
+	// rejected here — before the run reaches a finalize that cannot replace an
+	// accepted session.
+	rows, rowLines, err := parseUnitScanRowLines(run, spec, report, out, scoped)
 	if err != nil {
 		return nil, err
 	}
-	if needsReason(spec, token) && !hasReason(line, token) {
-		return nil, fmt.Errorf("check %q verdict %s carries no reason", key, token)
+	out.Rows = rows
+	for _, idx := range rowLines {
+		verdictLines[idx] = true
 	}
-	out.Verdicts[key] = token
-	if err := validateUnitScanLines(report); err != nil {
-		return nil, err
+	// The recorded verdict is recomposed from the rows. A full report's
+	// overall verdict must agree with its own row verdicts; a row-scoped
+	// report carries no overall verdict line, so the recomposed value is the
+	// session result's verdict — it feeds the gate outcome and the record's
+	// effective status (framework/validation_cache.md §Unit-scan row
+	// bookkeeping).
+	aggregate := gaterun.AggregateUnitScanVerdict(rows)
+	if !scoped && aggregate != out.Verdicts[key] {
+		return nil, fmt.Errorf("unit-scan report verdict %q disagrees with its row verdicts (%q)", out.Verdicts[key], aggregate)
 	}
-	if token == "MISMATCH" {
-		lines := strings.Split(report, "\n")
-		block := itemContinuationBlock(lines, lineIdx)
-		if err := parseAlignmentFindings(run, spec, key, block, out); err != nil {
-			return nil, err
+	out.Verdicts[key] = aggregate
+	// Each retained mismatch or surplus row is its own repairable finding: a
+	// report that collapses several rows into fewer blocks drops the repair
+	// detail of the missing rows (framework/unit_verify_checklist.md §Output
+	// Format).
+	requiredFindings := 0
+	for _, row := range rows {
+		if row.Verdict == gaterun.RowMismatch || row.Verdict == gaterun.RowSurplus {
+			requiredFindings++
 		}
 	}
-	return map[int]bool{lineIdx: true}, nil
+	if len(out.Findings) < requiredFindings {
+		return nil, fmt.Errorf("unit-scan report retains %d mismatched or surplus row(s) but declares only %d finding block(s) — write one finding block per retained row", requiredFindings, len(out.Findings))
+	}
+	return verdictLines, nil
+}
+
+// scanRowLineRe parses one checklist row line of a unit-scan report:
+// `row <row-id>: <verdict> — files: <comma-separated code files> — <detail>`.
+// The row id may contain colons (decl:promise:<id>), so the id group is lazy
+// up to the verdict token. Everything after the verdict is the row's
+// remainder; a `files:` clause inside it cites the verified code files.
+var scanRowLineRe = regexp.MustCompile(`(?mi)^[ \t]*-?[ \t]*row[ \t]+(.+?):[ \t]*(match|undetermined|mismatch|clean|surplus|ok|defect)\b(?:[ \t]*[—–-][ \t]*(.+))?$`)
+
+// scanRowVerdicts lists the allowed verdict tokens per row kind.
+var scanRowVerdicts = map[string][]string{
+	gaterun.RowKindDeclaration: {gaterun.RowMatch, gaterun.RowUndetermined, gaterun.RowMismatch},
+	gaterun.RowKindSurplus:     {gaterun.RowClean, gaterun.RowSurplus},
+	gaterun.RowKindNonRunnable: {gaterun.RowOK, gaterun.RowDefect},
+	gaterun.RowKindCoverage:    {gaterun.RowOK, gaterun.RowDefect},
+}
+
+func scanRowKind(id string) string {
+	switch {
+	case strings.HasPrefix(id, "decl:promise:"), strings.HasPrefix(id, "decl:evidence:"):
+		return gaterun.RowKindDeclaration
+	case strings.HasPrefix(id, "surplus:"):
+		return gaterun.RowKindSurplus
+	case strings.HasPrefix(id, "non_runnable:"):
+		return gaterun.RowKindNonRunnable
+	case strings.HasPrefix(id, "coverage:"):
+		return gaterun.RowKindCoverage
+	}
+	return ""
+}
+
+// parseUnitScanRowLines parses every `row` line of a unit-scan report. In
+// scoped mode the reported row set must equal the assigned rows exactly; in
+// full mode the row set is validated against the mechanical catalog by the
+// record builder. A mismatched or surplus row must carry its finding block.
+func parseUnitScanRowLines(run *gaterun.Run, spec *gaterun.SessionSpec, report string, out *parsedReport, scoped bool) ([]gaterun.ScanRowResult, []int, error) {
+	if len(spec.CheckKeys) != 1 {
+		return nil, nil, fmt.Errorf("a unit-level scan session judges exactly one key, got %d", len(spec.CheckKeys))
+	}
+	key := spec.CheckKeys[0]
+	if len(spec.ScanRows) == 0 {
+		return nil, nil, fmt.Errorf("the unit-scan session carries no assigned row catalog — plan a new run with the current tooling")
+	}
+	assigned := map[string]bool{}
+	for _, id := range spec.ScanRows {
+		assigned[id] = true
+	}
+	lines := strings.Split(report, "\n")
+	var rows []gaterun.ScanRowResult
+	var rowLines []int
+	seen := map[string]bool{}
+	for i, line := range lines {
+		match := scanRowLineRe.FindStringSubmatch(line)
+		if match == nil {
+			continue
+		}
+		id := strings.TrimSpace(match[1])
+		verdict := match[2]
+		remainder := strings.TrimSpace(match[3])
+		var files []string
+		if remainder != "" {
+			if rest, ok := strings.CutPrefix(remainder, "files:"); ok {
+				for _, f := range strings.Split(rest, ",") {
+					f = strings.TrimSpace(f)
+					if f != "" {
+						files = append(files, f)
+					}
+				}
+			}
+		}
+		kind := scanRowKind(id)
+		if kind == "" {
+			return nil, nil, fmt.Errorf("unit-scan row %q has an unknown row id prefix", id)
+		}
+		allowed := scanRowVerdicts[kind]
+		if !stringInList(allowed, verdict) {
+			return nil, nil, fmt.Errorf("unit-scan row %q verdict %q is not one of %s", id, verdict, strings.Join(allowed, "|"))
+		}
+		if !assigned[id] {
+			return nil, nil, fmt.Errorf("unit-scan report judges row %q, which this run did not assign", id)
+		}
+		if seen[id] {
+			return nil, nil, fmt.Errorf("unit-scan report declares row %q more than once", id)
+		}
+		seen[id] = true
+		row := gaterun.ScanRowResult{ID: id, Verdict: verdict, Files: files}
+		if kind == gaterun.RowKindDeclaration && verdict == gaterun.RowMatch && len(row.Files) == 0 {
+			return nil, nil, fmt.Errorf("unit-scan row %q declares match but cites no code files — cite the files the declarations were verified in", id)
+		}
+		// In a row-scoped report there is no aggregate verdict line, so each
+		// mismatched or surplus row carries its own finding block; in a full
+		// report the findings sit under the aggregate verdict line instead.
+		if scoped && (verdict == gaterun.RowMismatch || verdict == gaterun.RowSurplus) {
+			block := itemContinuationBlock(lines, i)
+			if err := parseAlignmentFindings(run, spec, key, block, out); err != nil {
+				return nil, nil, fmt.Errorf("unit-scan row %q: %w", id, err)
+			}
+		}
+		rows = append(rows, row)
+		rowLines = append(rowLines, i)
+	}
+	for id := range assigned {
+		if !seen[id] {
+			return nil, nil, fmt.Errorf("unit-scan report does not judge assigned row %q", id)
+		}
+	}
+	return rows, rowLines, nil
+}
+
+// rejectUnitScanAggregateLines rejects a row-scoped report that carries the
+// full report's aggregate machinery. The overall verdict line and the three
+// summary-line families belong to a full report: the row-scoped verdict is
+// recomposed from the rows, and findings written under a stray verdict or
+// summary line would sit outside every parsed row block and be silently
+// dropped instead of rejected.
+func rejectUnitScanAggregateLines(spec *gaterun.SessionSpec, key, report string) error {
+	allowed := strings.Join(verdictContractFor(spec.Kind, key).Allowed, "|")
+	verdictRe := regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*` + regexp.QuoteMeta(key) + `:\s*(` + allowed + `)\b`)
+	if verdictRe.MatchString(report) {
+		return fmt.Errorf("a row-scoped unit-scan report must not carry an overall verdict line for %s — report only the assigned `row` lines; the aggregate verdict is recomposed from the rows", key)
+	}
+	for _, class := range unitScanClasses {
+		re := regexp.MustCompile(`(?mi)^[ \t]*-?[ \t]*declarations\.` + regexp.QuoteMeta(class) + `:[ \t]*checked=`)
+		if re.MatchString(report) {
+			return fmt.Errorf("a row-scoped unit-scan report must not carry `declarations.%s:` summary lines — report only the assigned `row` lines", class)
+		}
+	}
+	if regexp.MustCompile(`(?mi)^[ \t]*-?[ \t]*surplus:[ \t]*found=`).MatchString(report) {
+		return fmt.Errorf("a row-scoped unit-scan report must not carry a `surplus:` summary line — report only the assigned `row` lines")
+	}
+	if regexp.MustCompile(`(?mi)^[ \t]*-?[ \t]*non_runnable:[ \t]*count=`).MatchString(report) {
+		return fmt.Errorf("a row-scoped unit-scan report must not carry a `non_runnable:` summary line — report only the assigned `row` lines")
+	}
+	return nil
 }
 
 // validateUnitScanLines enforces the unit-level scan's anti-skip contract: one

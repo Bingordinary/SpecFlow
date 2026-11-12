@@ -42,17 +42,25 @@ func writeDesignAnchorUnit(t *testing.T, root string) string {
 // edit against it.
 func designAnchorBaseline(t *testing.T, root, specPath string, anchors []string, mutate func(string) string) *Run {
 	t.Helper()
+	run, err := designAnchorPlanErr(t, root, specPath, anchors, mutate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return run
+}
+
+// designAnchorPlanErr is designAnchorBaseline without failing on a plan error:
+// when the edit touches no recorded dependency the planner reports the cache
+// fresh instead of planning an empty run.
+func designAnchorPlanErr(t *testing.T, root, specPath string, anchors []string, mutate func(string) string) (*Run, error) {
+	t.Helper()
 	writeFile(t, root, "src/main.go", "package main\n")
 	entry := evidenceEntryWithChecks(t, root, "docs/specs/units/candidate/unit_auth.md", mainCheckMarkers())
 	writeGateBaseline(t, root, GateVerify, "pass", "full", false, []validationcache.FileEntry{entry}, nil, anchors)
 	if err := os.WriteFile(specPath, []byte(mutate(readTestFile(t, specPath))), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run, err := Plan(root, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return run
+	return Plan(root, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeDelta, nil, nil, nil, time.Now())
 }
 
 func sourceOf(run *Run, key string) string {
@@ -70,16 +78,16 @@ func sourceOf(run *Run, key string) string {
 func TestVerifyDeltaCarriesDesignWhenUndeclaredBlockChanges(t *testing.T) {
 	root := newRepo(t)
 	specPath := writeDesignAnchorUnit(t, root)
-	run := designAnchorBaseline(t, root, specPath, []string{"Declared"}, func(spec string) string {
+	_, err := designAnchorPlanErr(t, root, specPath, []string{"Declared"}, func(spec string) string {
 		return strings.Replace(spec, "Undeclared rationale.", "Undeclared rationale, edited.", 1)
 	})
-
-	if got := sourceOf(run, "design:auth:src/main.go"); got == "executed" {
-		t.Fatalf("an edit to an undeclared narrative block must not re-run the design judgment, coverage=%+v notices=%v", run.Coverage, run.Notices)
-	}
-	// The unit-level scan pins the whole spec file, so it must still re-run.
-	if got := sourceOf(run, "unit:auth"); got != "executed" {
-		t.Fatalf("a spec edit must re-run the unit-level scan, got %q", got)
+	// No recorded judgment depends on the undeclared block: the design and
+	// architecture judgments pin only their declared anchor, the unit-scan
+	// rows pin promise/evidence regions and code files, and the item pins its
+	// own region and source. The planner therefore reports the cache fresh —
+	// nothing to re-run.
+	if err == nil || !strings.Contains(err.Error(), "cache is fresh") {
+		t.Fatalf("an edit no recorded judgment depends on must report the cache fresh, got %v", err)
 	}
 }
 

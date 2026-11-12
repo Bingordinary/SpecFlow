@@ -325,8 +325,17 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 		Entries:        entries,
 	}
 	// A validate conclusion has no judgment record to bind its judging
-	// standard, so the cache itself records it. Verify caches bind it per
-	// record instead (see framework/validation_cache.md §Format).
+	// standard, so the cache itself records it. Verify binds each judgment
+	// record to its session class; the final synthesis has no record, so the
+	// cache records that one class's standard under `cross`
+	// (framework/validation_cache.md §Format).
+	carriesCrossFinding := false
+	for _, finding := range outcome.Findings {
+		if finding.SourceKey == gaterun.CrossKey {
+			carriesCrossFinding = true
+			break
+		}
+	}
 	if run.Gate == gaterun.GateValidate {
 		if run.TargetKind == gaterun.TargetKindRule {
 			// Rule validate has no partial run: one standard value is enough.
@@ -344,10 +353,11 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 				standards[group] = fingerprint
 			}
 			// The final synthesis is a conclusion only when the cache carries
-			// one: a cross session ran, or standing relationships carried.
+			// one: a cross session ran, standing relationships carried, or a
+			// moved synthesis standard forced the synthesis to re-run.
 			// Binding a synthesis standard to a cache with no synthesis
 			// conclusion would make an unrelated synthesis edit stale it.
-			if cross != nil || len(run.AllRelationships()) > 0 {
+			if cross != nil || len(run.AllRelationships()) > 0 || run.SynthesisRerun || carriesCrossFinding {
 				fingerprint, ok := run.Standards[gaterun.CrossKey]
 				if !ok {
 					return fmt.Errorf("the run records no final-synthesis validate standard — plan a new run with the current tooling")
@@ -355,6 +365,14 @@ func finalizeGateRun(absRoot, runID, now string, stdout io.Writer) error {
 				standards[gaterun.CrossKey] = fingerprint
 			}
 			write.Standards = standards
+		}
+	} else if run.Gate == gaterun.GateVerify {
+		if cross != nil || len(run.AllRelationships()) > 0 || run.SynthesisRerun || carriesCrossFinding {
+			fingerprint, ok := run.Standards[gaterun.CrossKey]
+			if !ok || fingerprint == "" {
+				return fmt.Errorf("the run records no final-synthesis verify standard — plan a new run with the current tooling")
+			}
+			write.Standards = map[string]string{gaterun.CrossKey: fingerprint}
 		}
 	}
 
@@ -775,7 +793,8 @@ func runHasBlockingFindings(run *gaterun.Run, reports []reportRef) bool {
 // presented directly (framework/severity_policy.md §11), and the synthesis is
 // also where Check 2 Step 1 / Check 5 extraction artifacts are re-verified
 // (framework/unit_validate_checklist.md §Extraction re-verification). Verify
-// requires one for any finding. Rule validate never synthesizes.
+// requires one for any finding, or when a moved final-synthesis standard
+// forces it. Rule validate never synthesizes.
 func requiresFinalSynthesis(run *gaterun.Run, hasAnyFindings, hasBlockingFindings bool) bool {
 	if run.TargetKind == gaterun.TargetKindRule {
 		return false

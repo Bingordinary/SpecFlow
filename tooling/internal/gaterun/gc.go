@@ -33,9 +33,13 @@ type CollectedJudgments struct {
 // is storage debt too, and Remove drops the pointer with its record. The caller
 // must hold the repository mutation lock (gate-finalize's transaction).
 func CollectJudgments(root string) (CollectedJudgments, error) {
-	protocol, err := judgments.Protocol(root, GateVerify, TargetKindUnit)
-	if err != nil {
-		return CollectedJudgments{}, err
+	deployed := map[string]string{}
+	for _, kind := range judgments.VerifySessionKinds {
+		fingerprint, ferr := judgments.VerifySessionFingerprint(root, kind)
+		if ferr != nil {
+			return CollectedJudgments{}, ferr
+		}
+		deployed[recordKindForSessionKind(kind)] = fingerprint
 	}
 	live := map[string]bool{}
 	var queue []judgments.Reference
@@ -53,7 +57,7 @@ func CollectJudgments(root string) (CollectedJudgments, error) {
 	for _, ref := range cacheRefs {
 		seed(ref)
 	}
-	currentRefs, err := judgments.Current(root, protocol)
+	currentRefs, err := judgments.Current(root, deployed)
 	if err != nil {
 		return CollectedJudgments{}, err
 	}
@@ -115,7 +119,11 @@ func CollectJudgments(root string) (CollectedJudgments, error) {
 		if err != nil {
 			return CollectedJudgments{}, err
 		}
-		if recordProtocol == protocol {
+		recordKind, err := judgments.SlotKind(ref.Slot)
+		if err != nil {
+			return CollectedJudgments{}, err
+		}
+		if wanted, ok := deployed[recordKind]; ok && recordProtocol == wanted {
 			continue
 		}
 		bytes, err := judgments.Remove(root, ref)
@@ -126,4 +134,23 @@ func CollectJudgments(root string) (CollectedJudgments, error) {
 		collected.Bytes += bytes
 	}
 	return collected, nil
+}
+
+// recordKindForSessionKind maps a verify session class to the stored record
+// kind it publishes, so the collection pass can compare each slot against the
+// deployed standard of its own class.
+func recordKindForSessionKind(kind string) string {
+	switch kind {
+	case judgments.ProtocolSessionItem:
+		return judgments.Item
+	case judgments.ProtocolSessionUnit:
+		return judgments.Unit
+	case judgments.ProtocolSessionCode:
+		return judgments.Code
+	case judgments.ProtocolSessionDesign:
+		return judgments.Design
+	case judgments.ProtocolSessionArchitecture:
+		return judgments.Architecture
+	}
+	return ""
 }

@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/judgments"
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/specpaths"
 )
@@ -90,7 +89,7 @@ func TestSurfacesReadsDoNotGrowWithStoreSize(t *testing.T) {
 	grWriteSpecSurface(t, root, "auth", "contracts.js", "")
 	grWriteFile(t, root, "contracts.js", "export function response(token) { return {token}; }\n")
 
-	protocol, err := judgments.Protocol(root, gaterun.GateVerify, gaterun.TargetKindUnit)
+	protocol, err := judgments.VerifySessionFingerprint(root, judgments.ProtocolSessionCode)
 	if err != nil {
 		t.Fatal(err)
 	}

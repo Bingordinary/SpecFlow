@@ -108,7 +108,7 @@ func writeCacheBaseline(t *testing.T, root string, refs ...judgments.Reference) 
 
 func TestCollectJudgmentsRemovesExactlyUnreachableStaleProtocolRecords(t *testing.T) {
 	root := t.TempDir()
-	current := testProtocolFor(t, root, "verify", "unit")
+	current := testCodeProtocol(t, root)
 	stale := "stale-protocol-fingerprint"
 
 	live := gcRecord(t, root, "live.js", current, nil)
@@ -184,7 +184,7 @@ func TestCollectJudgmentsRemovesExactlyUnreachableStaleProtocolRecords(t *testin
 
 func TestCollectJudgmentsRemovesInvalidationMarkerOfCollectedRecord(t *testing.T) {
 	root := t.TempDir()
-	live := gcRecord(t, root, "live.js", testProtocolFor(t, root, "verify", "unit"), nil)
+	live := gcRecord(t, root, "live.js", testCodeProtocol(t, root), nil)
 	orphan := gcRecord(t, root, "orphan.js", "stale-protocol-fingerprint", nil)
 	writeCacheBaseline(t, root, live)
 	if err := judgments.Invalidate(root, orphan, "contradicted by newer evidence"); err != nil {
@@ -224,7 +224,7 @@ func TestCollectJudgmentsRetiresOnlyTheDeployedStandardsDecisions(t *testing.T) 
 	root := t.TempDir()
 	context := strings.Repeat("ab", 32)
 
-	keep := gcItemRecord(t, root, "auth", "auth.core", context, testProtocolFor(t, root, "verify", "unit"))
+	keep := gcItemRecord(t, root, "auth", "auth.core", context, testItemProtocol(t, root))
 	drop := gcItemRecord(t, root, "auth", "auth.core", context, "stale-protocol-fingerprint")
 
 	collected, err := CollectJudgments(root)

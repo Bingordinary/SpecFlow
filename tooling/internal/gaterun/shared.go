@@ -38,7 +38,7 @@ func targetedVerifyReferences(root, unit, target string, keys []string) ([]judgm
 	if err != nil {
 		return nil, err
 	}
-	protocol, err := judgments.Protocol(root, GateVerify, TargetKindUnit)
+	protocol, err := judgments.VerifySessionFingerprint(root, judgments.ProtocolSessionItem)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +211,7 @@ func prepareSharedChecks(root string, run *Run) error {
 			return nil
 		}
 		loaded[subject] = true
-		slot, err := judgments.Slot(run.Protocol, judgments.Code, "", subject, "")
+		slot, err := judgments.Slot(run.ProtocolForSessionKind(SessionKindCode), judgments.Code, "", subject, "")
 		if err != nil {
 			return err
 		}
@@ -238,7 +238,7 @@ func prepareSharedChecks(root string, run *Run) error {
 		if err, ok := checkMemo[ref.ID]; ok {
 			return err
 		}
-		err := judgments.Check(root, ref, layer, run.Protocol)
+		err := judgments.Check(root, ref, layer)
 		checkMemo[ref.ID] = err
 		return err
 	}
@@ -478,7 +478,7 @@ func sharedStates(root string, run *Run, states []*SessionState) ([]*SessionStat
 		if err != nil {
 			return nil, err
 		}
-		if err := judgments.Verify(root, r, binding.Reference, binding.Layer, run.Protocol); err != nil {
+		if err := judgments.Verify(root, r, binding.Reference, binding.Layer); err != nil {
 			return nil, err
 		}
 		result, err := BoundJudgmentResult(r, *ck, binding.Layer)
@@ -624,7 +624,7 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 		copyResult.Analysis = map[string]string{ck.Key: analysis}
 	}
 	copyResult.SpecBasis = nil
-	if ck.Kind == SessionKindDesign {
+	if ck.Kind == SessionKindDesign || ck.Kind == SessionKindArchitecture {
 		if basis, ok := result.SpecBasis[ck.Key]; ok {
 			// The declared anchors travel with the record: the record's spec
 			// pins are derived from them, so the record states its own
@@ -738,6 +738,8 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 		}
 		return nil
 	}
+	var recordRows []judgments.RowPin
+	recordVerdict := result.Verdicts[ck.Key]
 	switch ck.Kind {
 	case SessionKindCode:
 		// A public record's invalidation surface is the conclusion's own
@@ -827,21 +829,40 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 				return judgments.Reference{}, err
 			}
 		}
-	case SessionKindArchitecture, SessionKindUnit:
-		// Architecture and the unit-level alignment scan cover the whole unit:
-		// the spec and every declared code-surface file are pinned whole-file.
-		if err := addWholeFile(mainSpec); err != nil {
+	case SessionKindArchitecture:
+		// The architecture assessment covers the unit's code structure as a
+		// whole: every declared code-surface file stays pinned whole-file, so
+		// any code change reopens the assessment — that is the honest cost of
+		// a whole-unit verdict. Its spec side is not the whole document: the
+		// report declares the design content its assessment relied on
+		// (`Spec basis` anchors), and the record pins exactly those regions
+		// (framework/unit_verify_checklist.md §Output Format → Spec basis), so
+		// an edit elsewhere in the spec does not re-run it.
+		text, err := mainSpecText()
+		if err != nil {
 			return judgments.Reference{}, err
 		}
-		for _, f := range surfaceFiles(run, false) {
+		anchors := result.SpecBasis[ck.Key]
+		if len(anchors) == 0 {
+			return judgments.Reference{}, fmt.Errorf("architecture judgment for %s declares no Spec basis anchors — the assessment must name the spec design content it relied on", ck.Key)
+		}
+		for _, anchor := range anchors {
+			dep, ok := contenthash.SpecAnchorDep(text, anchor)
+			if !ok {
+				return judgments.Reference{}, SpecBasisError{Anchor: anchor, Spec: mainSpec}
+			}
+			if err := addRegion(mainSpec, dep); err != nil {
+				return judgments.Reference{}, err
+			}
+		}
+		for _, f := range surfaceFiles(run, true) {
 			if err := addWholeFile(f); err != nil {
 				return judgments.Reference{}, err
 			}
 		}
-		// The unit's own evidence record is part of its recorded truth. The
-		// unit-level conclusions read it, so a changed evidence record re-runs
-		// them instead of carrying silently — the conclusion pins what it
-		// read, not merely what the run happened to list.
+		// The unit's own evidence record is part of its recorded truth. Keep
+		// its whole-file pin: the assessment reads it, and an evidence change
+		// reopens the conclusion instead of carrying silently.
 		record, err := specpaths.UnitEvidenceRecord(root, unit, layer)
 		if err != nil {
 			return judgments.Reference{}, err
@@ -851,15 +872,30 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 				return judgments.Reference{}, err
 			}
 		}
-		if ck.Kind == SessionKindUnit {
-			content, err := mainSpecText()
-			if err != nil {
-				return judgments.Reference{}, err
-			}
-			if err := addPromisePins(specvalidation.PromiseDependencyIDs(content)); err != nil {
-				return judgments.Reference{}, err
-			}
+	case SessionKindUnit:
+		// The unit-level alignment scan keeps one aggregate verdict over a
+		// row-level checklist bookkeeping: one row per declaration source
+		// (promise entry, evidence-record section), one per declared code
+		// file's surplus check, one per non-runnable item. Each row pins its
+		// own evidence, so a change re-runs exactly the rows that read it
+		// (framework/validation_cache.md §Unit-scan row bookkeeping).
+		text, err := mainSpecText()
+		if err != nil {
+			return judgments.Reference{}, err
 		}
+		// The provider contracts stay row-independent pins: a provider
+		// contract change reopens the whole scan, a provider narrative or
+		// acceptance-item edit does not.
+		if err := addPromisePins(specvalidation.PromiseDependencyIDs(text)); err != nil {
+			return judgments.Reference{}, err
+		}
+		rows, verdict, err := buildUnitScanRows(root, run, ck, copyResult.Rows, len(copyResult.Findings), text)
+		if err != nil {
+			return judgments.Reference{}, err
+		}
+		copyResult.Verdicts = map[string]string{ck.Key: verdict}
+		recordRows = rows
+		recordVerdict = verdict
 	default:
 		return judgments.Reference{}, fmt.Errorf("no record inputs are defined for session kind %q", ck.Kind)
 	}
@@ -871,7 +907,7 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 	if err != nil {
 		return judgments.Reference{}, err
 	}
-	record := judgments.Record{Version: judgments.RecordVersion, Kind: kind, Unit: unit, Subject: subject, Coverage: []string{ck.Key}, Inputs: normalized, Dependencies: deps, References: refs, Protocol: run.Protocol, Verdict: result.Verdicts[ck.Key], Result: data, Report: report, ReportDigest: judgments.Digest([]byte(report)), SourceRun: run.RunID}
+	record := judgments.Record{Version: judgments.RecordVersion, Kind: kind, Unit: unit, Subject: subject, Coverage: []string{ck.Key}, Inputs: normalized, Dependencies: deps, Rows: recordRows, References: refs, Protocol: run.ProtocolForSessionKind(ck.Kind), Verdict: recordVerdict, Result: data, Report: report, ReportDigest: judgments.Digest([]byte(report)), SourceRun: run.RunID}
 	if kind == judgments.Item {
 		record.SpecContext, err = judgments.SpecContext(root, unit, layer)
 		if err != nil {
@@ -946,7 +982,7 @@ func PublicResultForDesignKey(root string, run *Run, ck CoverageKey) (SessionRes
 	if err != nil {
 		return SessionResult{}, err
 	}
-	if err := judgments.Verify(root, record, binding.Reference, binding.Layer, run.Protocol); err != nil {
+	if err := judgments.Verify(root, record, binding.Reference, binding.Layer); err != nil {
 		return SessionResult{}, err
 	}
 	result, err := BoundJudgmentResult(record, CoverageKey{Key: publicKey, Kind: SessionKindCode, File: ck.File}, binding.Layer)
