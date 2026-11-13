@@ -125,7 +125,6 @@ var mechanismSections = map[string][]string{
 	},
 	"shared_judgments.md": {
 		"Audience",
-		"Evidence-file roles and association display",
 		"Task batching and record inputs",
 		"Immutable storage and task allocation",
 		"Cache, delta and release",

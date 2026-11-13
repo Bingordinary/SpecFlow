@@ -88,7 +88,7 @@ The commands (next, validate, verify, promote) form a coherent process. The revi
 2. `next` outputs enough information for the agent to start work
 3. `validate` produces a structured output (per-checklist PASS/FAIL) that the agent can act on
 4. `verify` (normal-unit implementation-alignment and code-quality gate) produces structured per-acceptance-item alignment results with divergence analysis that leaves reconciliation direction to the user, plus P0-P3 graded code-quality findings; its merged cache must cover both lenses, be full mode, and be non-blocking to satisfy a normal-unit promote
-5. `promote` applies the target's path: a normal unit runs validate and verify before the archive step; a rule runs validate before version promotion and consumer migration
+5. `promote` applies the target's path: a normal unit runs validate and verify before the archive step; a rule runs validate before the candidate→stable copy and consumer impact assessment
 6. promote's archive step deterministically copies candidate files to stable directories
 7. the applicable gate runs (a normal unit's validate and verify; a rule's validate) are required to run as independent sessions (subagent), not self-approval; independence is an execution policy — the runtime-neutral tooling verifies artifacts, not session boundaries (see `framework/verification_scope.md` §Guarantee Boundary)
 8. if promote fails (an applicable gate finds issues, or a required cache is missing, stale, or blocking), the outcome is clearly communicated and stable truth is unchanged
@@ -107,7 +107,7 @@ Each command must have clearly defined boundaries. The review must verify:
 
 4. **promote**: given a unit name or rule id, resolves target type, requires user confirmation, and applies only that target's path:
    a. Normal unit: validate and verify are independent prerequisites, not phases inside promote. The agent performs the unit body-path pre-check, then the CLI independently checks all applicable caches before candidate→stable archive.
-   b. Rule: validate is the sole prerequisite. Rule verify must not be requested. The rule workflow owns version promotion and consumer migration.
+   b. Rule: validate is the sole prerequisite. Rule verify must not be requested. The rule workflow owns the candidate→stable copy and consumer impact assessment.
    c. Any missing, stale, or blocking applicable gate causes promote to fail without changing stable truth. Non-applicable gates must not block the target.
 
    The unit body-path pre-check scans the candidate spec's content — prose and structured field values — for candidate-layer paths that would break after archive. A structured field path (a candidate-layer path inside a structured field value — a declaration field, frontmatter or item) is deterministic `actionable`; a narrative reference requires user judgment and remains `needs_decision` until resolved. `framework/spec_writing_guide.md` §12 owns which field may reference a spec document by path: `affects.evidence_files` may (use the stable layer path), while every other structured field takes implementation code paths or bare names, so a spec-document path on one of them is malformed and validate rejects it. See `framework/spec_writing_guide.md` §3, §5, §7, §12 for the field roles.
@@ -428,6 +428,7 @@ The default scope includes:
    - `<framework-root>/core/*.md`
    - `<framework-root>/governance/**/*.md` (recursive, includes subdirectories such as `rules/`)
    - `<framework-root>/operations/*.md`
+   - `<framework-root>/unit_validate_checks.yaml` (machine-readable validate check structure)
 2. atom system files (content governance infrastructure)
    - `<framework-root>/_atoms/README.md`
    - `<framework-root>/_atoms/manifest.txt`
@@ -495,8 +496,8 @@ Local slices review one owner area for internal closure, side effects, contract 
    - reviews `spec_flow_review.md`, `spec_flow_design_review.md`, `governance/review.md`, `governance/review_scope.md`, and `severity_policy.md`
    - verifies review entry meaning, output contracts, finding contracts, and stop behavior
 3. `concept_and_command_policy`
-   - reviews `concepts.md`, `commands.md`, `agent_suggestion_rules.md`, `operations/operation_scope.md`, `operations/update.md`, and `guidance/*/SKILL.md`
-   - verifies the four commands (next, validate, verify, promote) have defined input, output, and failure behavior per Section 2.4
+   - reviews `concepts.md`, `commands.md`, `agent_suggestion_rules.md`, `operations/operation_scope.md`, `operations/update.md`, `validation_cache.md`, and `guidance/*/SKILL.md`
+   - verifies the four commands (next, validate, verify, promote) have defined input, output, and failure behavior per Section 2.4, and verifies that their cache lifecycle is defined by `validation_cache.md`
    - verifies project-instance format-update routing and guidance entry behavior
 4. `truth_and_implementation_gates`
    - reviews `spec_writing_guide.md`, `core/promise_model.md`, and `concepts.md`

@@ -33,7 +33,7 @@ Summary: ...
 ### Rule Publication Prerequisites
 
 1. On a unit completion signal or `promote@{unit}`, run read-only `specflowctl fresh --unit <name>` before suggesting promote or supplementary gates. Ordinary discussion and editing do not trigger publication reminders.
-2. For a normal candidate unit, publication blockers come from its own candidate `rule_refs`: an explicit rule with no stable file blocks; a missing rule blocks; a bound rule whose candidate differs from stable blocks until that rule is promoted. Compare normalized complete file content, including version and wording changes. Identical candidate/stable content passes. Unrelated bound rules and bindings dropped by this candidate do not block.
+2. For a normal candidate unit, publication blockers come from its own candidate `rule_refs`: an explicit rule with no stable file blocks; a missing rule blocks; a bound rule whose candidate differs from stable blocks until that rule is promoted. Compare normalized complete file content, including any content or wording change. Identical candidate/stable content passes. Unrelated bound rules and bindings dropped by this candidate do not block.
 3. Changed or newly created candidate global rules are unpublished drafts. List them as advisories and recommend publishing them first only if this unit's current round is intended to adopt them. Their existence does not block work under the active stable global rules; identical global candidate/stable content needs no advisory.
 4. Report every blocking rule ID and reason before recommending downstream checks. A read error stops with the failing path. The rule publication result is separate from validate/verify cache state and promise readiness: `READY` requires the publication check, all applicable gates, and a recorded promise state with contract closure `CLOSED` and every pinned provider promise published in the stable layer at the same fingerprint. Publication prerequisites apply to every unit; stable confirmation reports gain no promote condition.
 5. Never automatically promote a rule or start a gate. After rule publication, read `fresh --unit <name>` and recommend only the applicable missing, stale, or blocking gates. Evidence captured against the same bound candidate content may remain fresh after its publication; do not require an unconditional re-run.
@@ -41,7 +41,7 @@ Summary: ...
 
 **Execution steps:**
 
-1. Run `specflowctl fresh --unit <name>` and apply the publication prerequisites above. Stop on publication blockers or read errors; report applicable gate gaps without starting gates automatically. A missing or stale `promise_state_candidate.yaml` is a promote blocker: run `verify@{unit}` to record it.
+1. Run `specflowctl fresh --unit <name>` and apply the publication prerequisites above. Stop on publication blockers or read errors; report applicable gate gaps without starting gates automatically. A missing or stale `promise_state_candidate.yaml` is a promote blocker: tell the user that `verify@{unit}` must run to record it; do not start the gate.
 2. **Unit-reference check:** read the candidate spec's promise `depends_on` providers. A provider promise that is missing from the stable layer, or whose stable fingerprint differs from the candidate pin, is refused as an unpublished contract change; the provider unit must be promoted first. Report such refs before running promote.
 3. **Optional non-runnable review:**
    - Read the candidate spec at `docs/specs/units/candidate/unit_{name}.md`

@@ -172,6 +172,16 @@ Or `rule_exceptions: none`. Rules:
 4. Exceptions are not permanent. Each time the unit opens a candidate round, `validate` Check 8 re-evaluates every recorded exception: if it no longer holds (architecture rewritten, rule changed, or reason expired), it is reported for removal; if it still holds, the reason is re-examined and the exception is kept.
 5. An exception applies only to the unit that records it. It does not exempt any other unit.
 
+`non_behavior_blocks` is an optional frontmatter list naming `## Design Narrative` headings that carry design expression rather than formal behavior — for example context, motivation, terminology, architecture, rationale, examples, or rule alignment:
+
+```yaml
+non_behavior_blocks:
+  - Background
+  - Rejected alternatives
+```
+
+`validate` Check 16 requires every direct-content narrative block to be named by a promise or acceptance-item `source` or listed here. The list is exact: listing a parent heading does not classify its child blocks, and a block that states formal behavior must be sourced instead.
+
 ## 4. Unit Dependencies
 
 A dependency between units is declared on the consumer promise's `depends_on`; the provider unit is derived from the provider promise ID. A promise depends on another unit's contract, not on a promise in the same unit. Dependencies are never inferred from file sharing or prose.

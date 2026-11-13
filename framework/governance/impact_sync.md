@@ -8,7 +8,7 @@ It owns consumer discovery and fallback reason classification for affected units
 
 Run impact sync when:
 
-1. a stable unit's content changes and a current-layer consumer's dependency evidence was captured against the prior content (a consumer declares the provider promise on its own promise's `depends_on`, which resolves to the current truth — Trigger 1 detects stale dependency evidence by content, not by a reference marker).
+1. a stable unit's promise contract changes (a promise fingerprint change) and a current-layer consumer pinned the prior contract (a consumer declares the provider promise on its own promise's `depends_on`, which resolves to the current truth — Trigger 1 detects stale dependency evidence by promise contract content, not by a reference marker). Narrative, acceptance-item, test, and evidence-record changes do not change a promise fingerprint and do not reopen consumers.
 2. path ownership, object registration, or support-surface boundaries used by current truth change in a way that cannot be resolved from unit or rule frontmatter. (To detect: check whether git changes include structural path changes in `docs/specs/`, or whether a governance flow explicitly reports unresolved boundary change.)
 3. a governance flow cannot prove that downstream unit truth remains current.
 
@@ -16,7 +16,7 @@ Run impact sync when:
 
 Use the smallest durable truth that can prove affected consumers:
 
-1. the promoted stable unit reference and its changed content.
+1. the promoted stable unit reference and its changed promise contract.
 2. current-layer unit frontmatter and promise `depends_on` edges.
 3. when triggered by governance uncertainty (Trigger 3): the current truth snapshot and the governance flow's certainty boundaries.
 

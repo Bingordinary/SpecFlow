@@ -745,7 +745,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 		{
 			ID:             "concept_and_command_policy",
 			SliceType:      "local",
-			ReviewQuestion: "Do the session bootstrap, command reference, suggestion rules, and operation-scope rules define correct next, validate, verify, and promote behavior.",
+			ReviewQuestion: "Do the session bootstrap, command reference, suggestion rules, operation-scope rules, and cache lifecycle define correct next, validate, verify, and promote behavior.",
 			InputFiles: func(scope reviewscope.SpecFlowScope) []string {
 				return union([]string{
 					scope.FrameworkPath("concepts.md"),
@@ -754,6 +754,7 @@ func specFlowReviewBaselineDefinitions() []sliceDefinition {
 					scope.FrameworkPath("operations/operation_scope.md"),
 					scope.FrameworkPath("operations/update.md"),
 					scope.FrameworkPath("operations/version.md"),
+					scope.FrameworkPath("validation_cache.md"),
 				}, scope.GuidanceSkillFiles)
 			},
 		},

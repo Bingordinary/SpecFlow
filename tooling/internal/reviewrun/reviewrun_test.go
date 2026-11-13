@@ -52,6 +52,9 @@ func TestInitCreatesValidRunState(t *testing.T) {
 	if !containsString(routingSlice.InputFiles, "framework/operations/version.md") {
 		t.Fatalf("expected version policy in concept_and_command_policy slice, got %+v", routingSlice.InputFiles)
 	}
+	if !containsString(routingSlice.InputFiles, "framework/validation_cache.md") {
+		t.Fatalf("expected cache lifecycle in concept_and_command_policy slice, got %+v", routingSlice.InputFiles)
+	}
 	if !strings.Contains(routingSlice.ReviewQuestion, "next, validate, verify, and promote") {
 		t.Fatalf("expected the command policy slice to cover all four workflow commands, got %q", routingSlice.ReviewQuestion)
 	}
@@ -1114,6 +1117,7 @@ func createReviewRunRepo(t *testing.T) string {
 		"unit_validate_checklist.md",
 		"unit_verify_checklist.md",
 		"unit_promote_workflow.md",
+		"validation_cache.md",
 		"core/promise_model.md",
 		"operations/issues.md",
 	}

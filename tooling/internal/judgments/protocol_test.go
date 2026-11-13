@@ -224,6 +224,7 @@ func TestProtocolExcludesMechanismUpdates(t *testing.T) {
 			document: "shared_judgments.md",
 			judging: []string{
 				"## File associations",
+				"### Evidence-file roles and association display",
 				"## Required tasks",
 				"## Judgment and conclusion rules",
 			},
