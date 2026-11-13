@@ -255,10 +255,10 @@ func unitScanSpecRegions(root string, run *Run) ([]unitRegionRef, map[string]uni
 
 // buildUnitScanRows turns a scan session's row results into the record's row
 // pins, merging carried rows for a row-scoped partial run. It fails closed:
-// every catalog row needs a fresh verdict or a carried baseline row, a
-// session row outside the catalog is rejected, and a freshly judged
-// mismatched row must carry at least one finding in the session report.
-func buildUnitScanRows(root string, run *Run, ck CoverageKey, sessionRows []ScanRowResult, findingCount int, specText string) ([]judgments.RowPin, string, error) {
+// every catalog row needs a fresh verdict or a carried baseline row, and a
+// session row outside the catalog is rejected. The record-layer finding rule
+// is checked separately, after the row set is final (SaveJudgment).
+func buildUnitScanRows(root string, run *Run, ck CoverageKey, sessionRows []ScanRowResult, specText string) ([]judgments.RowPin, string, error) {
 	catalog, err := UnitScanRowCatalog(root, run)
 	if err != nil {
 		return nil, "", err
@@ -350,7 +350,6 @@ func buildUnitScanRows(root string, run *Run, ck CoverageKey, sessionRows []Scan
 	}
 
 	var rows []judgments.RowPin
-	freshMismatchRows := 0
 	for _, cr := range catalog {
 		if sessionRow, ok := reported[cr.ID]; ok {
 			if !assigned[cr.ID] {
@@ -435,9 +434,6 @@ func buildUnitScanRows(root string, run *Run, ck CoverageKey, sessionRows []Scan
 			if err := pin.Validate(); err != nil {
 				return nil, "", err
 			}
-			if pin.Verdict == judgments.RowMismatch || pin.Verdict == judgments.RowSurplus {
-				freshMismatchRows++
-			}
 			rows = append(rows, pin)
 			continue
 		}
@@ -451,21 +447,44 @@ func buildUnitScanRows(root string, run *Run, ck CoverageKey, sessionRows []Scan
 		}
 		return nil, "", fmt.Errorf("row %q is assigned to this run but the session report does not judge it", cr.ID)
 	}
-	// Only rows this session judged must carry findings in its report. A
-	// carried row comes from a passing baseline: a failed conclusion re-runs
-	// whole (see unitScanRowScope), so a pass record carries no
-	// mismatch/surplus row and its finding set is empty. The parse layer
-	// already enforces a finding block per freshly judged mismatch row; this
-	// guards the record boundary and the full-report case, where one report
-	// must not collapse several mismatched rows into fewer finding blocks.
-	if freshMismatchRows > 0 && findingCount < freshMismatchRows {
-		return nil, "", fmt.Errorf("unit-scan rows declare %d mismatched or surplus row(s) but the session carries only %d finding(s) — one finding per retained row is required", freshMismatchRows, findingCount)
-	}
 	verdicts := make([]string, 0, len(rows))
 	for _, row := range rows {
 		verdicts = append(verdicts, row.Verdict)
 	}
 	return rows, aggregateRowVerdicts(verdicts), nil
+}
+
+// aggregateUnitScanRowPins recomposes the scan's aggregate verdict from the
+// record's final row pins. It is the carried-record counterpart of
+// AggregateUnitScanVerdict: the session path aggregates parsed row results,
+// the carried re-save path reuses the record's merged pins.
+func aggregateUnitScanRowPins(rows []judgments.RowPin) string {
+	verdicts := make([]string, 0, len(rows))
+	for _, row := range rows {
+		verdicts = append(verdicts, row.Verdict)
+	}
+	return aggregateRowVerdicts(verdicts)
+}
+
+// checkUnitScanFindingCoverage enforces the record-layer finding rule: a
+// record with mismatched or surplus rows must carry at least one finding
+// bound to its unit key. The finding set is the post-synthesis terminal set,
+// where the final synthesis merges findings that restate one root cause, so
+// this is an existence check over the final row set, not a
+// one-finding-per-row count. The one-block-per-retained-row rule belongs to
+// the session report and is enforced at submission
+// (framework/validation_cache.md §Unit-scan row bookkeeping).
+func checkUnitScanFindingCoverage(rows []judgments.RowPin, findingCount int, key string) error {
+	mismatched := 0
+	for _, row := range rows {
+		if row.Verdict == judgments.RowMismatch || row.Verdict == judgments.RowSurplus {
+			mismatched++
+		}
+	}
+	if mismatched > 0 && findingCount == 0 {
+		return fmt.Errorf("unit-scan rows declare %d mismatched or surplus row(s) but the canonical record carries no finding — at least one finding bound to %s is required", mismatched, key)
+	}
+	return nil
 }
 
 // carriedUnitScanRows returns the baseline record's row pins snapshotted at

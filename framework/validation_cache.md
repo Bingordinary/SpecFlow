@@ -510,7 +510,11 @@ judgment (`framework/verification_scope.md` §Coverage Model → Unit-scan rows)
   aggregate verdict is recomposed from the rows: any mismatch or surplus row is
   a `MISMATCH`, any undetermined or defective row is a `CANNOT_DETERMINE`, and
   only all-clean rows are `ALIGNED`. A mismatched or surplus row carries at
-  least one finding bound to `unit:<unit>`.
+  least one finding bound to `unit:<unit>`. This is an existence rule over the
+  post-synthesis terminal finding set, not a one-finding-per-row count: one
+  merged finding may cover several rows. The one-block-per-retained-row rule
+  belongs to the session report and is enforced at submission
+  (`framework/verification_scope.md` §Report Field and Parse Contract).
 - **Delta scope.** The scope is derived from the record itself, not only when
   the record fails to verify. Row-level scope is available only for a passing
   conclusion: a baseline whose logical status is not `pass`, or whose aggregate

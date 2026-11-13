@@ -1551,7 +1551,7 @@ func buildVerifyBaselineFixture(t *testing.T, root string, entries []validationc
 				return []judgments.Binding{state.Records["code:"+ck.File]}
 			}
 			return nil
-		}())
+		}(), nil)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -148,7 +148,7 @@ func TestVerifyJudgmentPinsProviderContract(t *testing.T) {
 		Verdicts:        map[string]string{item.Key: "ALIGNED"},
 		EffectiveStatus: map[string]string{item.Key: "pass"},
 	}
-	ref, err := SaveJudgment(root, run, item, &result, "fixture", nil)
+	ref, err := SaveJudgment(root, run, item, &result, "fixture", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

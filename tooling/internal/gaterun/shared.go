@@ -528,7 +528,7 @@ func PublishPublic(root string, run *Run, spec *SessionSpec, state *SessionState
 				return err
 			}
 		}
-		ref, err := SaveJudgment(root, run, *ck, state.Result, state.Report, nil)
+		ref, err := SaveJudgment(root, run, *ck, state.Result, state.Report, nil, nil)
 		if err != nil {
 			return err
 		}
@@ -581,7 +581,14 @@ func ValidateSpecBasis(root string, run *Run, anchors []string) error {
 	return nil
 }
 
-func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, report string, refs []judgments.Binding) (judgments.Reference, error) {
+// SaveJudgment persists one conclusion's record. carriedRows is non-nil only
+// when a carried unit-scan record is rewritten without re-running its scan:
+// the record's merged row pins are then the authoritative row set, while
+// result.Rows holds the original session's assigned rows (a row-scoped run
+// reports only its subset). Rebuilding the pins from that subset would
+// misread carried rows as missing (framework/validation_cache.md §Unit-scan
+// row bookkeeping → Delta scope).
+func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, report string, refs []judgments.Binding, carriedRows []judgments.RowPin) (judgments.Reference, error) {
 	layer := run.Target
 	unit := ck.Unit
 	kind := ck.Kind
@@ -889,13 +896,25 @@ func SaveJudgment(root string, run *Run, ck CoverageKey, result *SessionResult, 
 		if err := addPromisePins(specvalidation.PromiseDependencyIDs(text)); err != nil {
 			return judgments.Reference{}, err
 		}
-		rows, verdict, err := buildUnitScanRows(root, run, ck, copyResult.Rows, len(copyResult.Findings), text)
-		if err != nil {
+		if carriedRows != nil {
+			// A carried record re-save keeps the record's merged row pins:
+			// the scan did not re-run, and result.Rows only records the
+			// original session's assigned subset. Rebuilding from that subset
+			// would treat carried rows as unjudged.
+			recordRows = append([]judgments.RowPin(nil), carriedRows...)
+			recordVerdict = aggregateUnitScanRowPins(recordRows)
+		} else {
+			rows, verdict, err := buildUnitScanRows(root, run, ck, copyResult.Rows, text)
+			if err != nil {
+				return judgments.Reference{}, err
+			}
+			recordRows = rows
+			recordVerdict = verdict
+		}
+		copyResult.Verdicts = map[string]string{ck.Key: recordVerdict}
+		if err := checkUnitScanFindingCoverage(recordRows, len(copyResult.Findings), ck.Key); err != nil {
 			return judgments.Reference{}, err
 		}
-		copyResult.Verdicts = map[string]string{ck.Key: verdict}
-		recordRows = rows
-		recordVerdict = verdict
 	default:
 		return judgments.Reference{}, fmt.Errorf("no record inputs are defined for session kind %q", ck.Kind)
 	}

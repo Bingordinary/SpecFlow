@@ -32,6 +32,40 @@ func coveredKeys(t *testing.T, root string, run *gaterun.Run) map[string]bool {
 	return out
 }
 
+// completeRowScopedDelta submits every session of a planned row-scoped delta
+// up to and including finalize. The caller owns the plan and keeps its
+// assertions.
+func completeRowScopedDelta(t *testing.T, root, main string, delta *gaterun.Run) {
+	t.Helper()
+	// The scan report judges only the assigned rows.
+	report := "row decl:promise:auth.core: match — files: contracts.js\nrow surplus:contracts.js: clean — no undeclared behavior\n"
+	if err := sharedSubmit(t, root, delta.RunID, "unit:auth", report); err != nil {
+		t.Fatalf("scoped scan submit: %v", err)
+	}
+	// The remaining delta sessions: item and design both pinned the file, so
+	// they re-run too; complete them.
+	if err := sharedSubmit(t, root, delta.RunID, "item:auth:auth.core", grVerifyItemReport("item:auth:auth.core", main, "contracts.js")); err != nil {
+		t.Fatal(err)
+	}
+	if err := sharedSubmit(t, root, delta.RunID, "code:contracts.js", grDefaultQualityReport(delta, *delta.CoverageByKey("code:contracts.js"))); err != nil {
+		t.Fatal(err)
+	}
+	design := "File: design:auth:contracts.js\nconclusion: acceptable\nspec_requirements: token behavior checked — auth contract uses this shape\nSpec basis: Narrative\nSpec basis: Promises\ngate_findings: none\nDependency scope:\ndesign:auth:contracts.js: " + main + ": Description\ndesign:auth:contracts.js: contracts.js: all\n"
+	if err := sharedSubmit(t, root, delta.RunID, "design:auth:contracts.js", design); err != nil {
+		t.Fatal(err)
+	}
+	if err := sharedSubmit(t, root, delta.RunID, "architecture:auth", grDefaultQualityReport(delta, *delta.CoverageByKey("architecture:auth"))); err != nil {
+		t.Fatal(err)
+	}
+	cross := "Cross-check: 1/1 PASS — consistent\ncross: " + main + ": Description\n"
+	for _, ck := range delta.Coverage {
+		cross += "Effective status: " + ck.Key + " = pass\n"
+	}
+	cross += "Effective status: cross = pass\n"
+	grSubmitOK(t, root, delta.RunID, "cross", cross)
+	grFinalizeOK(t, root, delta.RunID)
+}
+
 // TestUnitScanRowScopedDeltaCompletes pins the row-level scan recovery end to
 // end: a one-file code edit re-runs only that file's surplus row and the
 // declaration rows that cited the file; the other rows carry, the scoped
@@ -71,33 +105,7 @@ func TestUnitScanRowScopedDeltaCompletes(t *testing.T) {
 		t.Fatalf("a row-scoped mission must list its assigned rows: %v", spec.Context)
 	}
 
-	// Submit the scoped scan report: only the assigned rows.
-	report := "row decl:promise:auth.core: match — files: contracts.js\nrow surplus:contracts.js: clean — no undeclared behavior\n"
-	if err := sharedSubmit(t, root, delta.RunID, "unit:auth", report); err != nil {
-		t.Fatalf("scoped scan submit: %v", err)
-	}
-	// The remaining delta sessions: item, code, design carry? The item and
-	// design both pinned the file, so they re-run too; complete them.
-	if err := sharedSubmit(t, root, delta.RunID, "item:auth:auth.core", grVerifyItemReport("item:auth:auth.core", main, "contracts.js")); err != nil {
-		t.Fatal(err)
-	}
-	if err := sharedSubmit(t, root, delta.RunID, "code:contracts.js", grDefaultQualityReport(delta, *delta.CoverageByKey("code:contracts.js"))); err != nil {
-		t.Fatal(err)
-	}
-	design := "File: design:auth:contracts.js\nconclusion: acceptable\nspec_requirements: token behavior checked — auth contract uses this shape\nSpec basis: Narrative\nSpec basis: Promises\ngate_findings: none\nDependency scope:\ndesign:auth:contracts.js: " + main + ": Description\ndesign:auth:contracts.js: contracts.js: all\n"
-	if err := sharedSubmit(t, root, delta.RunID, "design:auth:contracts.js", design); err != nil {
-		t.Fatal(err)
-	}
-	if err := sharedSubmit(t, root, delta.RunID, "architecture:auth", grDefaultQualityReport(delta, *delta.CoverageByKey("architecture:auth"))); err != nil {
-		t.Fatal(err)
-	}
-	cross := "Cross-check: 1/1 PASS — consistent\ncross: " + main + ": Description\n"
-	for _, ck := range delta.Coverage {
-		cross += "Effective status: " + ck.Key + " = pass\n"
-	}
-	cross += "Effective status: cross = pass\n"
-	grSubmitOK(t, root, delta.RunID, "cross", cross)
-	grFinalizeOK(t, root, delta.RunID)
+	completeRowScopedDelta(t, root, main, delta)
 
 	// The rewritten record keeps every catalog row: the carried ones keep
 	// their verdicts and pins, the re-run ones are fresh.
@@ -147,6 +155,83 @@ func TestUnitScanRowScopedDeltaCompletes(t *testing.T) {
 		t.Fatalf("delta finalize must leave the gate fresh: %+v %v", check, err)
 	}
 	_ = os.Remove // keep os imported for future edits
+}
+
+// TestUnitScanCarriedRecordResaveKeepsMergedRows pins the carried-record
+// re-save path: a row-scoped record keeps the merged catalog in its row pins
+// but only the original session's assigned rows in Result.Rows. A later
+// synthesis-only delta that rewrites the carried record's findings must keep
+// every row instead of re-reading the session subset as a full assignment
+// (framework/validation_cache.md §Unit-scan row bookkeeping → Delta scope).
+func TestUnitScanCarriedRecordResaveKeepsMergedRows(t *testing.T) {
+	root, main := deltaBaseline(t, "    affects:\n      files:\n        - helper.js\n", map[string]string{"helper.js": "export const helper = true;\n"})
+	grWriteFile(t, root, "contracts.js", "export function response(token) { return {token, edited: true}; }\n")
+	delta := deltaPlan(t, root)
+	if len(delta.ScanRows) == 0 {
+		t.Fatalf("expected a row-scoped scan re-run, got a full one (coverage %v)", coverageKeysOf(delta))
+	}
+	completeRowScopedDelta(t, root, main, delta)
+
+	state := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
+	binding, ok := state.Records["unit:auth"]
+	if !ok {
+		t.Fatalf("the row-scoped delta did not publish a unit-scan record")
+	}
+	record, err := judgments.Load(root, binding.Reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scoped gaterun.SessionResult
+	if err := json.Unmarshal(record.Result, &scoped); err != nil {
+		t.Fatal(err)
+	}
+	if len(record.Rows) != 4 || len(scoped.Rows) != 2 {
+		t.Fatalf("fixture must leave a row-scoped record: merged_rows=%d session_rows=%d", len(record.Rows), len(scoped.Rows))
+	}
+
+	// A moved final-synthesis standard re-runs only the synthesis over the
+	// carried local results. The new relationship finding affects the carried
+	// unit scan, so finalize must rewrite its record.
+	editSynthesisStandard(t, root)
+	next := deltaPlan(t, root)
+	if len(next.Coverage) != 0 || !next.SynthesisRerun {
+		t.Fatalf("want a synthesis-only delta, got coverage=%v synthesis_rerun=%t", coverageKeysOf(next), next.SynthesisRerun)
+	}
+	report := relationshipReport(t, root, next.RunID, map[string]string{"contract_consistency": main}, "contract_consistency")
+	report = strings.Replace(report,
+		"Finding affects: "+next.RunID+"/cross/F1 = relationship:contract_consistency",
+		"Finding affects: "+next.RunID+"/cross/F1 = relationship:contract_consistency, unit:auth", 1)
+	grSubmitOK(t, root, next.RunID, "cross", report)
+	grFinalizeOK(t, root, next.RunID)
+
+	state = grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
+	binding = state.Records["unit:auth"]
+	record, err = judgments.Load(root, binding.Reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.Rows) != 4 {
+		t.Fatalf("the carried rewrite lost merged rows: %+v", record.Rows)
+	}
+	if record.Verdict != "ALIGNED" {
+		t.Fatalf("the scan's row aggregate = %q, want ALIGNED", record.Verdict)
+	}
+	var rewritten gaterun.SessionResult
+	if err := json.Unmarshal(record.Result, &rewritten); err != nil {
+		t.Fatal(err)
+	}
+	if len(rewritten.Rows) != 2 {
+		t.Fatalf("the record's session row set must stay the original subset, got %d rows", len(rewritten.Rows))
+	}
+	if len(rewritten.Findings) != 1 || rewritten.Findings[0].SourceKey != "unit:auth" {
+		t.Fatalf("the rewritten record must carry the canonical unit finding, got %+v", rewritten.Findings)
+	}
+	if len(state.Findings) != 1 || state.Findings[0].ID != next.RunID+"/cross/F1" {
+		t.Fatalf("the synthesized failure must stay canonical in the cache, got %+v", state.Findings)
+	}
+	if state.LogicalStatus["unit:auth"] == "pass" {
+		t.Fatalf("the synthesized failure must not leave the unit scan logically passing, got %v", state.LogicalStatus)
+	}
 }
 
 // TestUnitScanRowScopedDeltaSkipsRemovedCatalogRows pins the removed-row half
@@ -638,6 +723,132 @@ func TestUnitScanExplicitRerunRejudgesWholeCatalog(t *testing.T) {
 	}
 	if len(spec.ScanRows) != len(catalog) {
 		t.Fatalf("mission rows = %v, want the full catalog (%d rows)", spec.ScanRows, len(catalog))
+	}
+}
+
+// unitScanTwoRowMismatchRun plans a verify run whose unit scan retains two
+// mismatch/surplus rows with one finding block per row, then submits every
+// local session up to the final synthesis. The two row findings are the
+// synthesis input the final cross session disposes.
+func unitScanTwoRowMismatchRun(t *testing.T) (root, runID, main string) {
+	t.Helper()
+	root = createCLITestRepo(t)
+	grEnableMissionLayout(t, root)
+	main = grWriteSpecSurface(t, root, "auth", "contracts.js", "")
+	grWriteFile(t, root, "contracts.js", "export function response(token) { return {token}; }\n")
+	runID = grPlan(t, root, "--gate", "verify", "--unit", "auth", "--target", "candidate", "--relationships", "contract_consistency")
+	run := mustLoadRun(t, root, runID)
+
+	report := grVerifyUnitScanReport(t, root, run, "unit:auth")
+	report = strings.Replace(report,
+		"unit:auth: ALIGNED — fixture scan\n",
+		"unit:auth: MISMATCH (structural) — two retained mismatches\n"+
+			grVerifyAnalysisFields("unit:auth")+
+			grVerifyAnalysisFields("unit:auth"), 1)
+	report = strings.Replace(report,
+		"row decl:promise:auth.core: match — files: contracts.js",
+		"row decl:promise:auth.core: mismatch — files: contracts.js", 1)
+	report = strings.Replace(report,
+		"row surplus:contracts.js: clean — no undeclared behavior",
+		"row surplus:contracts.js: surplus — one surplus construct", 1)
+	if err := sharedSubmit(t, root, runID, "unit:auth", report); err != nil {
+		t.Fatalf("unit-scan submit: %v", err)
+	}
+	grSubmitOK(t, root, runID, "auth.core", grVerifyItemReport("auth.core", main, "contracts.js"))
+	grAutoSubmitRemaining(t, root, runID)
+	return root, runID, main
+}
+
+// TestUnitScanFinalizeMergesRowFindingsIntoCrossFinding pins the layer split:
+// the report carries one finding block per retained mismatch row, while the
+// record carries the post-synthesis terminal set. When the final synthesis
+// merges both row findings into one relationship finding, finalize must accept
+// the record — one merged finding covers both rows
+// (framework/verification_scope.md §Final synthesis;
+// framework/validation_cache.md §Unit-scan row bookkeeping).
+func TestUnitScanFinalizeMergesRowFindingsIntoCrossFinding(t *testing.T) {
+	root, runID, main := unitScanTwoRowMismatchRun(t)
+	f1 := grRunFindingID(runID, "unit:auth", 1)
+	f2 := grRunFindingID(runID, "unit:auth", 2)
+	cross := fmt.Sprintf(
+		"Cross item: contract_consistency = FAIL — the unit-scan rows restate the relationship failure\n"+
+			"Cross item finding: contract_consistency = %s/cross/F1\n"+
+			"relationship:contract_consistency: %s: all\n"+
+			"Cross-check: 0/1 FAIL — relationship check complete\n"+
+			"Finding disposition: %s = merged -> %s/cross/F1 — same root cause as the relationship finding\n"+
+			"Finding disposition: %s = merged -> %s/cross/F1 — same root cause as the relationship finding\n"+
+			"[P1] relationship — the declaration and the implementation describe one defect (actionable)\n"+
+			"  problem: both unit-scan rows and the relationship finding restate the same root cause\n"+
+			"  evidence: both sides read\n"+
+			"  impact: the combined behavior is wrong\n"+
+			"  fix: reconcile the definition and the implementation\n"+
+			"Finding affects: %s/cross/F1 = relationship:contract_consistency,unit:auth\n",
+		runID, main, f1, runID, f2, runID, runID)
+	grSubmitOK(t, root, runID, "cross", cross)
+	grFinalizeOK(t, root, runID)
+
+	baseline := grReadJudgmentBaseline(t, root, "unit", "auth", "verify")
+	if len(baseline.Findings) != 1 {
+		t.Fatalf("one merged root cause must be counted once, got %+v", baseline.Findings)
+	}
+	if baseline.LogicalStatus["unit:auth"] != "fail" || baseline.LogicalStatus["relationship:contract_consistency"] != "fail" {
+		t.Fatalf("the merged finding must fail both keys: %+v", baseline.LogicalStatus)
+	}
+	binding, ok := baseline.Records["unit:auth"]
+	if !ok {
+		t.Fatalf("finalize did not publish the unit-scan record")
+	}
+	record, err := judgments.Load(root, binding.Reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatchRows := 0
+	for _, row := range record.Rows {
+		if row.Verdict == judgments.RowMismatch || row.Verdict == judgments.RowSurplus {
+			mismatchRows++
+		}
+	}
+	if mismatchRows != 2 {
+		t.Fatalf("the record must keep both mismatched rows, got %+v", record.Rows)
+	}
+	var result gaterun.SessionResult
+	if err := json.Unmarshal(record.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Findings) != 1 || result.Findings[0].ID != runID+"/cross/F1" || result.Findings[0].SourceKey != "unit:auth" {
+		t.Fatalf("the unit record must carry the merged terminal finding, got %+v", result.Findings)
+	}
+	if record.Verdict != "MISMATCH" {
+		t.Fatalf("aggregate verdict = %q, want MISMATCH", record.Verdict)
+	}
+}
+
+// TestUnitScanFinalizeRejectsMismatchRowsWithoutCanonicalFinding pins the
+// record-layer invariant the report-layer count cannot express: a synthesis
+// that suppresses every row finding leaves a mismatched unit scan with no
+// finding, so finalize must fail closed instead of publishing a record whose
+// aggregation and finding set disagree.
+func TestUnitScanFinalizeRejectsMismatchRowsWithoutCanonicalFinding(t *testing.T) {
+	root, runID, main := unitScanTwoRowMismatchRun(t)
+	f1 := grRunFindingID(runID, "unit:auth", 1)
+	f2 := grRunFindingID(runID, "unit:auth", 2)
+	cross := fmt.Sprintf(
+		"Cross item: contract_consistency = FAIL — the relationship failure is independent of the row verdicts\n"+
+			"Cross item finding: contract_consistency = %s/cross/F1\n"+
+			"relationship:contract_consistency: %s: all\n"+
+			"Cross-check: 0/1 FAIL — relationship check complete\n"+
+			"Finding disposition: %s = suppressed — the row mismatch is a false positive against the complete source set\n"+
+			"Finding disposition: %s = suppressed — the row surplus is a false positive against the complete source set\n"+
+			"[P1] relationship — the two sides disagree (actionable)\n"+
+			"  problem: the relationship finding does not restate a row finding\n"+
+			"  evidence: both sides read\n"+
+			"  impact: the combined behavior is wrong\n"+
+			"  fix: reconcile the definitions\n"+
+			"Finding affects: %s/cross/F1 = relationship:contract_consistency\n",
+		runID, main, f1, f2, runID)
+	grSubmitOK(t, root, runID, "cross", cross)
+	if _, err := grFinalize(t, root, runID); err == nil || !strings.Contains(err.Error(), "canonical record carries no finding") {
+		t.Fatalf("finalize must reject mismatch rows without a canonical finding, got %v", err)
 	}
 }
 

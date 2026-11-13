@@ -1669,6 +1669,7 @@ func publishUnitJudgments(root string, run *gaterun.Run, reports []reportRef, ou
 		}
 		binding, bound := run.Records[ck.Key]
 		rep, reported := byKey[ck.Key]
+		var carriedUnitRows []judgments.RowPin
 		if !reported {
 			if !bound {
 				return fmt.Errorf("no accepted judgment for %s", ck.Key)
@@ -1682,6 +1683,12 @@ func publishUnitJudgments(root string, run *gaterun.Run, reports []reportRef, ou
 				return err
 			}
 			rep = reportRef{result: &result, text: record.Report}
+			if ck.Kind == gaterun.SessionKindUnit {
+				// A carried unit scan is not re-executed: its record's merged
+				// row pins are the authoritative row set. result.Rows holds
+				// the original session's assigned subset only.
+				carriedUnitRows = record.Rows
+			}
 		}
 		original := keyJudgmentResult(ck, rep.result)
 		canonical := finalizedKeyResult(ck, &original, outcome)
@@ -1718,7 +1725,7 @@ func publishUnitJudgments(root string, run *gaterun.Run, reports []reportRef, ou
 			}
 			refs = append(refs, public)
 		}
-		ref, err := gaterun.SaveJudgment(root, run, ck, &canonical, report, refs)
+		ref, err := gaterun.SaveJudgment(root, run, ck, &canonical, report, refs, carriedUnitRows)
 		if err != nil {
 			return err
 		}

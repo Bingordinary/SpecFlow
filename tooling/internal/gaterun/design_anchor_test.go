@@ -177,21 +177,21 @@ func TestSaveDesignJudgmentPinsDeclaredAnchors(t *testing.T) {
 	base := SessionResult{Kind: ck.Kind, Verdicts: map[string]string{ck.Key: "acceptable"}, EffectiveStatus: map[string]string{ck.Key: "pass"}, ReportDigest: "sha256:fixture"}
 
 	// No declaration: rejected.
-	if _, err := SaveJudgment(root, run, *ck, &base, "fixture", nil); err == nil || !strings.Contains(err.Error(), "no Spec basis anchors") {
+	if _, err := SaveJudgment(root, run, *ck, &base, "fixture", nil, nil); err == nil || !strings.Contains(err.Error(), "no Spec basis anchors") {
 		t.Fatalf("a design record without declared anchors must be rejected, got %v", err)
 	}
 
 	// Unresolvable anchor: rejected.
 	bad := base
 	bad.SpecBasis = map[string][]string{ck.Key: {"No Such Block"}}
-	if _, err := SaveJudgment(root, run, *ck, &bad, "fixture", nil); err == nil || !strings.Contains(err.Error(), "does not resolve") {
+	if _, err := SaveJudgment(root, run, *ck, &bad, "fixture", nil, nil); err == nil || !strings.Contains(err.Error(), "does not resolve") {
 		t.Fatalf("an unresolvable anchor must be rejected, got %v", err)
 	}
 
 	// Declared anchors: pinned exactly, and nothing else.
 	declared := base
 	declared.SpecBasis = map[string][]string{ck.Key: {"Declared", "auth.core"}}
-	ref, err := SaveJudgment(root, run, *ck, &declared, "fixture", nil)
+	ref, err := SaveJudgment(root, run, *ck, &declared, "fixture", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
