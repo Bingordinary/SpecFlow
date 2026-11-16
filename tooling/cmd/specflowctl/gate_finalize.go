@@ -1431,8 +1431,20 @@ func assembleEntries(absRoot string, run *gaterun.Run) ([]validationcache.FileEn
 		}
 	}
 
+	// The executed and carried judgment sets are disjoint by construction: the
+	// planner carries only the keys it does not re-run. A carried key's marker
+	// is the plan-time snapshot written below, so the coverage loop must not
+	// mint a second marker for it — a unit validate group can re-run around a
+	// carried check (external re-runs 7/8 while 6/9 carry).
+	carried := map[string]bool{}
+	for _, key := range run.CarriedKeys {
+		carried[key] = true
+	}
 	seenKey := map[string]bool{}
 	attach := func(ref, key, lens string) error {
+		if seenKey[key] {
+			return fmt.Errorf("check %q already has a cache marker — every judgment key gets exactly one", key)
+		}
 		a, err := ensure(ref)
 		if err != nil {
 			return err
@@ -1446,6 +1458,9 @@ func assembleEntries(absRoot string, run *gaterun.Run) ([]validationcache.FileEn
 	}
 	for _, ck := range run.Coverage {
 		for _, key := range run.ReportKeys(ck) {
+			if carried[key] {
+				continue
+			}
 			ref := gaterun.TargetMainFile(run)
 			if ck.Kind == gaterun.SessionKindCode {
 				// A public check's artifact is its own file: the check key is

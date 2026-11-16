@@ -7,10 +7,38 @@ import (
 	"testing"
 
 	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/gaterun"
+	"github.com/Bingordinary/SpecFlow/specflow/tooling/internal/validationcache"
 )
 
 func e2eRuleContent(constraint string) string {
 	return "---\nid: b_rule_auth\nscope: unit\n---\n\n# b_rule_auth\n\n## Constraint\n\n" + constraint + "\n"
+}
+
+// grCheckMarkerCounts reads a published unit cache back as a baseline and
+// counts each check key's markers. The cache format allows exactly one marker
+// per judgment key, so a key recorded twice inside one entry is a test failure
+// rather than a count of two — this is the partial-run duplicate it pins.
+func grCheckMarkerCounts(t *testing.T, root, command string) map[string]int {
+	t.Helper()
+	baseline, err := validationcache.ReadGateBaseline(root, "unit", "auth", command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline.UnusableReason != "" {
+		t.Fatalf("published cache is not a usable baseline: %s", baseline.UnusableReason)
+	}
+	counts := map[string]int{}
+	for _, entry := range baseline.Entries {
+		inEntry := map[string]bool{}
+		for _, check := range entry.Checks {
+			if inEntry[check.Check] {
+				t.Fatalf("cache entry %s records check %q twice", entry.Path, check.Check)
+			}
+			inEntry[check.Check] = true
+			counts[check.Check]++
+		}
+	}
+	return counts
 }
 
 // TestE2EMechanicalDeltaLifecycle walks the validate recovery path with the
@@ -54,6 +82,16 @@ func TestE2EMechanicalDeltaLifecycle(t *testing.T) {
 	cache := grReadCache(t, root, "docs/specs/meta/validation/unit/auth/validate_result.md")
 	if !strings.Contains(cache, "basis: delta") {
 		t.Fatalf("expected a delta-basis cache, got:\n%s", cache)
+	}
+	// A partial run carries keys that live inside a re-run group: the external
+	// group owns 6..9 but only 7/8 re-run here, so 6/9 carry. Each judgment key
+	// still gets exactly one marker — the carried ones from the plan-time
+	// snapshot, the re-run ones from the accepted session.
+	markers := grCheckMarkerCounts(t, root, "validate")
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"} {
+		if markers[key] != 1 {
+			t.Fatalf("delta cache records check %q %d time(s), want exactly one (markers: %v)", key, markers[key], markers)
+		}
 	}
 	if out, err := freshRun(t, root, "--unit", "auth"); err != nil || !strings.Contains(out, "validate  FRESH") {
 		t.Fatalf("fresh after the external delta: %v\n%s", err, out)
