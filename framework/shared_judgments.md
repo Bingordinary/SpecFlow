@@ -6,13 +6,13 @@ This protocol runs in an installed consumer project. Framework development in th
 
 ## File associations
 
-`implementation_surface` and `affects.files` name files participating in a unit's implementation. A file, including a file expanded from a directory, may be associated with several units. File sharing alone creates neither a dependency nor a new unit. Units describe independent responsibilities; behavior, data meaning, and shared agreements still have one authoritative source. Shared constraints are published in rules rather than restated in several specs. An unfinished candidate does not replace that unit's stable requirements.
+`implementation_surface` and `affects.files` name the unit-owned code files in a unit's verification scope — implementation files and the unit's own test files. A file, including a file expanded from a directory, may be associated with several units. File sharing alone creates neither a dependency nor a new unit. Units describe independent responsibilities; behavior, data meaning, and shared agreements still have one authoritative source. Shared constraints are published in rules rather than restated in several specs. An unfinished candidate does not replace that unit's stable requirements.
 
 Reverse surplus checks read complete associated files, then compare only structures and designs belonging to the judgment's unit responsibility. Independent behavior outside that responsibility is not surplus merely because it is absent from this unit's spec. Attribute the boundary using implementation, callers and data flow; file association alone proves neither ownership nor exclusion. Helpers and shared mechanisms implementing or constraining the assigned requirement remain in scope. Missing attribution evidence requires adding the missing input to the open run with `specflowctl gate-extend` before judging surplus.
 
 ### Evidence-file roles and association display
 
-`affects.evidence_files` names read-only verification evidence for the citing item: it joins the run snapshot and the item session's read refs, but it never becomes implementation participation, a quality coverage key, or operation write scope.
+`affects.evidence_files` names read-only verification evidence for the citing item: a file owned solely by another unit, or a spec document referenced by path (`framework/spec_writing_guide.md` §12). It joins the run snapshot and the item session's read refs, but it never becomes implementation participation, a quality coverage key, or operation write scope. A unit-owned test file is not evidence: it belongs on the code surface (`affects.files` or a directory `implementation_surface`), where it is graded by the quality lens; a test file left off the declared surface is outside the graded surface and produces no quality key.
 
 `specflowctl surfaces` derives current and stable associations from spec declarations and displays public code judgments and each unit's design judgments. The association view is not manually maintained review state.
 

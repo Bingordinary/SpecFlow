@@ -592,7 +592,7 @@ For each acceptance item in the target spec (evidence-record content is read as 
 
 **Test design sub-check (for verification_type: testable items only):**
 
-Ownership note: the `alignment` lens records whether tests exist for an item (coverage completeness, as annotation evidence) and verifies the evidence-carry check for cited `affects.evidence_files`. The **quality** of the unit's own test files — behavioral vs implementation-coupled, assertion meaningfulness, failure-mode coverage, brittle duplication — is owned by the `quality` lens (see §Lenses and boundary ownership and the quality-lens standard above). A test-quality concern is never an `alignment` finding.
+Ownership note: the `alignment` lens records whether tests exist for an item (coverage completeness, as annotation evidence) and verifies the evidence-carry check for cited `affects.evidence_files`. The **quality** of the unit's own test files — behavioral vs implementation-coupled, assertion meaningfulness, failure-mode coverage, brittle duplication — is owned by the `quality` lens (see §Lenses and boundary ownership and the quality-lens standard above) when those files are declared on the unit's code surface (`affects.files` or a directory `implementation_surface`); a test file left off the surface is not graded. A unit-owned code or test file is never declared in `affects.evidence_files`; validate Check 6 rejects that declaration. A test-quality concern is never an `alignment` finding.
 
 This sub-check identifies significantly implied but missing test scenarios; the alignment reviewer reports them per acceptance item.
 
@@ -641,7 +641,7 @@ The coverage-completeness concern is recorded under the item in the verify outpu
 
 **Evidence-carry check (items citing `affects.evidence_files`):**
 
-An item may cite read-only evidence files — typically tests or code owned by another unit — in `affects.evidence_files`. For each cited file, the item judgment verifies that the file actually carries the behavior or assertion the item claims: locate the referenced behavior in the cited file and confirm it matches the item's `description` or `pass_condition` at the claimed location. A citation that does not resolve to the claimed behavior is a MISMATCH of this item (root cause and direction per Step 7). The cited file's own quality is never judged here — it is another unit's implementation surface, reviewed by its owner's gates — and an evidence file never enters this unit's quality coverage keys. The unit's own test files keep their quality-lens grading.
+An item may cite read-only evidence in `affects.evidence_files`: a file owned solely by another unit — typically tests or code — or a spec document referenced by path (`framework/spec_writing_guide.md` §12). For each cited code or test file, the item judgment verifies that the file actually carries the behavior or assertion the item claims: locate the referenced behavior in the cited file and confirm it matches the item's `description` or `pass_condition` at the claimed location. A citation that does not resolve to the claimed behavior is a MISMATCH of this item (root cause and direction per Step 7). The cited file's own quality is never judged here — it is another unit's code surface, reviewed by its owner's gates — and an evidence file never enters this unit's quality coverage keys. A cited spec document is read as the referenced document's own content. The unit's own test files are not evidence: they belong on this unit's code surface (`affects.files` or a directory `implementation_surface`); a test file on the declared surface keeps its quality-lens grading, while one left off the surface is outside the graded surface and is not graded.
 
 #### Annotation Output Format
 
@@ -658,19 +658,21 @@ An item may cite read-only evidence files — typically tests or code owned by a
 
 **Session:** item sessions. Scope is a per-item declaration check and stays with the item even though Step 1 compares spec structures to code.
 
-**Purpose:** Cross-reference each acceptance item's declared implementation files — `implementation_surface` (a file, or a directory expanded to its repository-content files) and `affects.files` — against the actual implementation. This catches undeclared scope and missing declarations.
+**Purpose:** Cross-reference each acceptance item's declared code-surface files — `implementation_surface` (a file, or a directory expanded to its repository-content files) and `affects.files` — against the actual implementation. This catches undeclared scope and missing declarations. A declared unit-owned test file is a quality subject, not implementation participation: this step judges its declaration, never its test quality.
 
 **Execution steps:**
 
-1. For each acceptance item's declared implementation files — its `implementation_surface` value (a file, or a directory expanded to its repository-content files) plus every `affects.files` entry:
+1. For each acceptance item's declared code-surface files — its `implementation_surface` value (a file, or a directory expanded to its repository-content files) plus every `affects.files` entry:
 ```
 - Read each declared file
-- Does the file contain implementation relevant to the pass_condition?
-- Is the nature of the change consistent with the behavior described?
+- For an implementation file: does it contain implementation relevant to the pass_condition?
+- For an implementation file: is the nature of the change consistent with the behavior described?
   (If item says "add login handler" but the file only has imports → flag)
-- Does this file participate in the declared behavior? Shared implementation is permitted;
-  check this unit's requirements independently
+- For an implementation file: does it participate in the declared behavior? Shared implementation
+  is permitted; check this unit's requirements independently
   (see `framework/shared_judgments.md`).
+- For a unit-owned test file: do not judge it as implementation participation. It is a quality
+  subject; its assertions belong to the quality lens.
 ```
 
 2. For each acceptance item with `affects.rules`:
@@ -682,23 +684,24 @@ An item may cite read-only evidence files — typically tests or code owned by a
 
 3. For the promise this acceptance item verifies (its `promise` value): for each entry in that promise's `depends_on`, search the implementation for use of the provider contract; if the declared dependency is unused, flag it. A `non_promise` item has no promise dependency and skips this step.
 
-4. Cross-reference: compare the declared implementation files (`implementation_surface` expansion plus `affects.files`) against the set of files that contain actual implementation related to this acceptance item:
+4. Cross-reference: compare the declared implementation files (`implementation_surface` expansion plus the implementation entries in `affects.files`) against the set of files that contain actual implementation related to this acceptance item:
 ```
-- Files with relevant code but not declared → flag (under-declared scope)
-- Declared files with no relevant code → flag (over-declared scope)
+- Files with relevant implementation but not declared → flag (under-declared scope)
+- Declared implementation files with no relevant code → flag (over-declared scope)
 ```
+Declared unit-owned test files are excluded from this comparison: they are quality subjects, and a test file is never an over-declared-scope finding merely because it is a test.
 
 **Scope boundary for non-implementation files:**
-- Test files are not scope violations: the declared implementation files (`implementation_surface`/`affects.files`) declare implementation scope; a relevant test file absent from them is context evidence, never an under-declared-scope finding.
+- Test files are not scope violations: the declared code-surface files (`implementation_surface`/`affects.files`) declare the item's code scope; a relevant test file absent from them is context evidence, never an under-declared-scope finding. This is a Step 3 boundary, not a declaration exemption: a unit-owned test file absent from the code surface produces no quality key and is never graded by the quality lens, so the spec should declare it on the surface when the unit owns it. A declared unit-owned test file is a quality subject — it is not over-declared scope merely because it is a test.
 - Dependency files (read for context but not part of the implementation) are likewise context evidence, never scope findings.
 
 An under-declared file is a declaration defect, not a read-ref gap: report it as a scope finding whose fix updates the candidate spec's declaration, then re-plan verify.
 
-**PASS:** All declared implementation files are accurate and complete
+**PASS:** All declared implementation files are accurate and complete; declared unit-owned test files are quality subjects, never over-declared scope
 
 **FAIL (scope MISMATCH):** Undeclared scope or inaccurate declarations found — defer classification to Step 7
 
-**Check method:** declared implementation files (`implementation_surface` × `affects.files`) × actual implementation — triple cross-reference (files, rules, dependencies)
+**Check method:** declared code-surface files (`implementation_surface` × `affects.files`) × actual implementation — triple cross-reference (files, rules, dependencies)
 
 ### Gate-Extend and Input Manifest
 

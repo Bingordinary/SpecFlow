@@ -308,7 +308,7 @@ func TestCheckAnchors_AffectsSequenceAtFieldColumnResolves(t *testing.T) {
 	repoRoot := newRepo(t)
 	writeSurfaceFile(t, repoRoot, "internal/demo/a.go", "package demo\n")
 	writeSurfaceFile(t, repoRoot, "internal/demo/handler.go", "package demo\n")
-	writeSurfaceFile(t, repoRoot, "internal/demo/handler_test.go", "package demo\n")
+	writeSurfaceFile(t, repoRoot, "peer/handler_test.go", "package peer\n")
 	writeCandidate(t, repoRoot, "test_unit",
 		"---\nid: test_unit\nrule_refs: none\n---\n\n"+
 			"acceptance_item_set:\n"+
@@ -324,7 +324,7 @@ func TestCheckAnchors_AffectsSequenceAtFieldColumnResolves(t *testing.T) {
 			"      files:\n"+
 			"      - internal/demo/handler.go\n"+
 			"      evidence_files:\n"+
-			"      - internal/demo/handler_test.go\n")
+			"      - peer/handler_test.go\n")
 
 	result := checkAnchors(repoRoot, "test_unit")
 	if result.Status != Pass {

@@ -12,6 +12,5 @@ acceptance_item_set:
     runnable: yes
     evidence_requirements: [integration_test_pass]
     affects:
-      files: [auth/login.go]
-      evidence_files: [auth/login_test.go]
+      files: [auth/login_test.go]
 ```

@@ -82,8 +82,7 @@ acceptance_item_set:
     runnable: yes
     evidence_requirements: [integration_test_pass]
     affects:
-      files: [auth/login.go]
-      evidence_files: [auth/login_test.go]
+      files: [auth/login_test.go]
 ```
 ==ATOM_END:acceptance_item_example==
 
@@ -337,10 +336,10 @@ acceptance_item_set:
     affects:                             # scope that verify must check globally
       files:
         - internal/demo/handler.go
-      evidence_files:
-        - internal/demo/handler_test.go
       rules: []
 ```
+
+> **Note on the unit's own tests:** a test file this unit owns belongs on the code surface: it is either already inside a directory `implementation_surface` (the example's `implementation_surface` is a directory, so its test files are included by expansion) or declared in `affects.files`. A test file on the declared code surface receives quality-lens grading; a test file left off the surface is outside the graded surface and produces no quality key. It is never declared in `affects.evidence_files`, which carries read-only evidence owned solely by another unit or a spec-document reference under §12.
 
 > **Note for `testable` items:** When `verification_type` is `testable`, the `description` field must be written as a Gherkin-style Given/When/Then scenario set, not as a single prose sentence. See [§Gherkin-style Description Convention](#gherkin-style-description-convention) for the convention.
 
@@ -362,8 +361,8 @@ acceptance_item_set:
 | `not_runnable_reason` | recommended | Reason the item is not runnable; required when `runnable: no` |
 | `target` | recommended | The behavior subject or protocol this item targets (e.g. API endpoint, module boundary, protocol name) |
 | `evidence_requirements` | recommended | List of minimum evidence types needed (e.g. `automated_test_pass`, `integration_test_pass`, `old_code_deleted`, `no_remaining_refs`) |
-| `affects.files` | recommended | Implementation files that must be verified as part of this item's scope. Like `implementation_surface`, the field declares implementation code — a spec document is not a valid entry (see the `implementation_surface` row). Files may be shared; behavior dependencies are expressed through the consumer promise's `depends_on`, never through file overlap (see §14.4 File Associations and Shared Agreements) |
-| `affects.evidence_files` | recommended | Read-only verification evidence files (typically tests or code owned by another unit) cited to back this item's judgment. They join the run snapshot and the item session's read refs, but they never define implementation participation, quality coverage keys, or operation write scope. Each cited file must exist and must actually carry the behavior or assertion the item claims — the alignment judgment verifies the citation (see `framework/unit_verify_checklist.md` Step 2 → Evidence-carry check). The cited file's own quality belongs to its owner's gates |
+| `affects.files` | recommended | Unit-owned code files that must be verified as part of this item's scope: implementation files and the unit's own test files. A test file this unit owns belongs here (or inside a directory `implementation_surface`), because the declared code surface — `implementation_surface` expansion plus this field — produces `code:<file>` / `design:<unit>:<file>` keys; a file owned only by another unit is not a valid entry — cite it through `affects.evidence_files`. Like `implementation_surface`, the field declares code — a spec document is not a valid entry (see the `implementation_surface` row). Files may be shared; behavior dependencies are expressed through the consumer promise's `depends_on`, never through file overlap (see §14.4 File Associations and Shared Agreements) |
+| `affects.evidence_files` | recommended | Read-only verification evidence cited to back this item's judgment: a file owned solely by another unit (typically tests or code), or a spec document referenced by path under §12 (a stable-layer spec document uses its stable layer path). A unit-owned code or test file — including its own test files — is not evidence for its own behavior: declare it on the code surface (`affects.files` or a directory `implementation_surface`) so it receives quality-lens grading; validate Check 6 rejects a unit-owned code or test file cited here. These files join the run snapshot and the item session's read refs, but they never define implementation participation, quality coverage keys, or operation write scope. Each cited file must exist; a code or test evidence file must actually carry the behavior or assertion the item claims — the alignment judgment verifies that citation (see `framework/unit_verify_checklist.md` Step 2 → Evidence-carry check), while a spec-document reference is read as the referenced document's own content. The cited file's own quality belongs to its owner's gates |
 | `affects.rules` | recommended | Rule names that must be respected |
 
 When `verification_type` is `inspectable`, the `evidence_requirements` should specify what inspection evidence is needed (e.g. `old_code_deleted`, `no_remaining_refs`).
@@ -660,7 +659,7 @@ Spec body prose must also not contain layer-prefixed spec paths (`docs/specs/uni
 This rule does not apply to:
 - Path-valued structured fields that may reference a spec document (`affects.evidence_files`) — when this field references a spec document by path, use the stable layer path (it stays valid after promote); candidate-layer spec paths in structured fields are invalid.
 
-`implementation_surface` and `affects.files` are **not** in this exemption. They declare implementation code surfaces (§7), so a spec document is rejected as a value on either field, whether or not it resolves — a spec document is a reference object, and naming it as implementation would send the document's own text into the code-quality review and make the confirmation cache stale the moment the next promote rewrites that path. Reference a spec document through `affects.evidence_files` instead; contract dependencies use the promise's `depends_on`.
+`implementation_surface` and `affects.files` are **not** in this exemption. They declare code surfaces (§7), so a spec document is rejected as a value on either field, whether or not it resolves — a spec document is a reference object, and naming it as code would send the document's own text into the code-quality review and make the confirmation cache stale the moment the next promote rewrites that path. Reference a spec document through `affects.evidence_files` instead; contract dependencies use the promise's `depends_on`.
 
 ## 13. Section Regions
 
@@ -735,7 +734,7 @@ Whether a concrete value or assertion is an acceptable **Contract Anchor** or an
 
 ### 14.4 File Associations and Shared Agreements
 
-`implementation_surface` and `affects.files` identify files participating in this unit's behavior, including shared implementations. Directory declarations expand to repository-content files. Several units may declare the same file; sharing does not automatically create a dependency or require an abstraction unit. `affects.evidence_files` is a different relation: it names read-only verification evidence — typically tests or code owned by another unit — that backs the citing item's judgment. An evidence file is never implementation participation of the citing unit, never a quality coverage key, and never operation write scope; its behavior and its quality belong to its owner's gates. The citing item's judgment verifies only that the cited file actually carries the behavior the item claims (see `framework/unit_verify_checklist.md` Step 2 → Evidence-carry check).
+`implementation_surface` and `affects.files` identify the unit-owned code files in an item's verification scope — implementation files and the unit's own test files — including shared implementations. Directory declarations expand to repository-content files. Several units may declare the same file; sharing does not automatically create a dependency or require an abstraction unit. Ownership decides the field, not file kind: a test file this unit owns belongs on its code surface — declared in `affects.files`, or already inside a directory `implementation_surface` — and, when on the declared surface, receives `code:<file>` / `design:<unit>:<file>` quality keys; a test file left off the surface is outside the graded surface. `affects.evidence_files` is a different relation: it names read-only verification evidence owned solely by another unit, or a spec document referenced by path (§12), that backs the citing item's judgment. An evidence file is never implementation participation of the citing unit, never a quality coverage key, and never operation write scope; its behavior and its quality belong to its owner's gates. A unit-owned code or test file — including its own test files — is never evidence. The citing item's judgment verifies only that the cited code or test file actually carries the behavior the item claims (see `framework/unit_verify_checklist.md` Step 2 → Evidence-carry check).
 
 Units describe independent responsibilities. Behavior, data meaning and shared agreements still have one authoritative source. Shared constraints belong in rules, consumed through `rule_refs`, rather than being restated in unit specs. Genuine behavior dependencies use the consumer promise's `depends_on`.
 
