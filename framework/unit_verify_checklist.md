@@ -875,7 +875,7 @@ The assessment's result is reported on the session's mandatory `non_runnable: co
 **Execution steps:**
 
 1. **Spec-side placeholder check:** For each acceptance item, read the `implementation_surface` value:
-   - Value is `<pending>` → MISMATCH: the design-first placeholder was never backfilled (do not classify yet — defer to Step 7)
+   - Value is `<pending>` → MISMATCH: the design-first placeholder was never backfilled (do not classify yet — defer to Step 7). `gate-plan` rejects an all-`<pending>` spec that resolves no code file; a `<pending>` value that reaches a planned run is still a MISMATCH
    - Value is not `<pending>` but resolves to no file → MISMATCH: the declared mapping points at no implementation (do not classify yet — defer to Step 7). `gate-plan` already rejects such a spec, so this state means the surface changed after planning — the finalize snapshot comparison reports the divergence as well
 
 2. **Adjudicate the tool's candidates:** Classify each hit:

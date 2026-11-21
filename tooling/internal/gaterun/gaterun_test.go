@@ -229,6 +229,46 @@ func TestPlanVerifyRejectsUnresolvableImplementationSurface(t *testing.T) {
 	}
 }
 
+// TestPlanVerifyRejectsAllPendingImplementationSurface verifies the degenerate
+// plan is rejected: when every acceptance item still carries the design-first
+// <pending> placeholder and no declared code file resolves, every coverage key
+// is a predetermined MISMATCH or absent, so no reviewer should run.
+func TestPlanVerifyRejectsAllPendingImplementationSurface(t *testing.T) {
+	repoRoot := newRepo(t)
+	extra := "  - id: auth.pending\n    promise: auth.core\n    source: [Narrative]\n    description: Later.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: <pending>\n    verification_method: test\n    pass_condition: Later.\n    runnable: no\n"
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "<pending>", extra)
+
+	_, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "no verifiable object") || !strings.Contains(err.Error(), "2 acceptance items") {
+		t.Fatalf("expected the all-pending rejection, got %v", err)
+	}
+	runs, listErr := ListRuns(repoRoot)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("a rejected plan must not leave run state, got %v", runs)
+	}
+}
+
+// TestPlanVerifyAllowsAllPendingWithDeclaredCodeFile pins the boundary: a
+// declared affects.files code file keeps the quality lens verifiable, so the
+// plan still runs and the pending item judgments stay with Step 6.
+func TestPlanVerifyAllowsAllPendingWithDeclaredCodeFile(t *testing.T) {
+	repoRoot := newRepo(t)
+	extra := "    affects:\n      files:\n        - src/declared.go\n  - id: auth.pending\n    promise: auth.core\n    source: [Narrative]\n    description: Later.\n    verification_type: testable\n    verification_surface: api\n    implementation_surface: <pending>\n    verification_method: test\n    pass_condition: Later.\n    runnable: no\n"
+	writeUnit(t, repoRoot, "candidate", "auth", "none", "none", "<pending>", extra)
+	writeFile(t, repoRoot, "src/declared.go", "package src\n")
+
+	run, err := Plan(repoRoot, GateVerify, TargetKindUnit, "auth", TargetCandidate, ModeFull, nil, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.CoverageByKey("code:src/declared.go") == nil {
+		t.Fatalf("expected the declared code file's quality key, got %v", run.Coverage)
+	}
+}
+
 // TestPlanVerifyRejectsSpecDocumentImplementationSurface verifies the planning
 // precondition applies to a spec-document surface too: the value resolves to a
 // real file, but that file is a spec document — a reference object, not a code

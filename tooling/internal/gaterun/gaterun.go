@@ -1893,7 +1893,10 @@ func deriveRuleValidate(repoRoot, ruleID, target string) ([]Ref, error) {
 // so the no-entries divergence semantics apply to affects.files only. Both
 // fields declare implementation code, so both reject a spec-document value
 // before anything expands; the affects.files role check leaves the existence
-// tolerance above untouched.
+// tolerance above untouched. An all-<pending> spec that resolves no code file
+// has no verifiable object either: every item judgment is already a mechanical
+// MISMATCH and the quality lens has nothing to read, so the plan is rejected
+// here rather than executed for a predetermined result.
 func (d *Derivation) codeSurfaces(specContent string) ([]Surface, error) {
 	repoRoot := d.root
 	// Fail closed before expanding anything: a non-<pending>
@@ -1914,8 +1917,21 @@ func (d *Derivation) codeSurfaces(specContent string) ([]Surface, error) {
 	if problems := specvalidation.CheckAffectsFilesSpecDocuments(repoRoot, specContent); len(problems) > 0 {
 		return nil, fmt.Errorf("declared affects.files is not a usable code surface — fix the acceptance items before planning a verify run: %s", specvalidation.FormatSurfaceProblems(problems))
 	}
+	// An item-less spec is already rejected by the promise model. The other
+	// degenerate plan is a spec whose items all still carry the design-first
+	// placeholder: without any resolved code file, every coverage key is either
+	// a predetermined MISMATCH (the item keys) or absent (the quality keys).
+	itemIDs := specvalidation.ExtractAcceptanceItemIDs(specContent)
+	surfaceValues := specvalidation.ExtractImplementationSurfaces(specContent)
+	allPending := len(itemIDs) > 0 && len(surfaceValues) == len(itemIDs)
+	for _, value := range surfaceValues {
+		if strings.TrimSpace(value) != specvalidation.SurfacePending {
+			allPending = false
+			break
+		}
+	}
 	var paths []string
-	paths = append(paths, specvalidation.ExtractImplementationSurfaces(specContent)...)
+	paths = append(paths, surfaceValues...)
 	paths = append(paths, specvalidation.ExtractAffectsFiles(specContent)...)
 	var surfaces []Surface
 	seen := map[string]bool{}
@@ -1938,6 +1954,18 @@ func (d *Derivation) codeSurfaces(specContent string) ([]Surface, error) {
 			return nil, err
 		}
 		surfaces = append(surfaces, surface)
+	}
+	if allPending {
+		hasCodeFile := false
+		for _, surface := range surfaces {
+			if len(surface.Entries) > 0 {
+				hasCodeFile = true
+				break
+			}
+		}
+		if !hasCodeFile {
+			return nil, fmt.Errorf("verify plan has no verifiable object: all %d acceptance items still declare implementation_surface: %s, and no declared code file resolves — backfill each item with its real code path before planning a verify run (framework/spec_writing_guide.md §7); a partially backfilled spec still plans, and verify Step 6 judges each remaining %s item as MISMATCH", len(itemIDs), specvalidation.SurfacePending, specvalidation.SurfacePending)
+		}
 	}
 	return surfaces, nil
 }

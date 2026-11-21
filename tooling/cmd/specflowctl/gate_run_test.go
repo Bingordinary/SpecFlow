@@ -4338,14 +4338,16 @@ func TestGateDeltaFinalizesWithCarriedItemRegion(t *testing.T) {
 	grWriteFile(t, repoRoot, "src/big.go", big.String())
 	grWriteFile(t, repoRoot, "src/two.go", "package two\n\nvar Two = 2\n")
 
-	// Declare no implementation surface: the two evidence files enter the
-	// snapshot as input-manifest evidence only, so the quality lens has no
-	// coverage keys and the test isolates the alignment-lens carried evidence.
+	// Both items declare src/two.go as their implementation surface; src/big.go
+	// enters the run only through the input manifest. The test isolates the
+	// item-region pin: a change to a supplied evidence file does not invalidate
+	// the item's own record. An all-<pending> spec has no verifiable object and
+	// is rejected at planning, so at least one real surface must remain.
 	specContent, rerr := os.ReadFile(specPath)
 	if rerr != nil {
 		t.Fatal(rerr)
 	}
-	if werr := os.WriteFile(specPath, []byte(strings.ReplaceAll(string(specContent), "implementation_surface: src", "implementation_surface: <pending>")), 0644); werr != nil {
+	if werr := os.WriteFile(specPath, []byte(strings.ReplaceAll(string(specContent), "implementation_surface: src", "implementation_surface: src/two.go")), 0644); werr != nil {
 		t.Fatal(werr)
 	}
 
