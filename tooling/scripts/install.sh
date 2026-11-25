@@ -10,7 +10,8 @@ usage() {
 Usage: install.sh
 
 Run from the root of the repository that should adopt specFlow.
-The installer clones SpecFlow into ./specflow, adds ignore entries
+The installer clones SpecFlow into ./specflow with a partial, sparse checkout
+(runtime directories only), adds ignore entries
 (specflow/, build caches, tool configs) to .gitignore,
 installs the current platform's local binaries, and runs specflowctl init.
 USAGE
@@ -110,8 +111,27 @@ if [[ -e "${TARGET_DIR}" ]]; then
   exit 1
 fi
 
-echo "Cloning SpecFlow into ./${TARGET_DIR}..."
-git clone "${REPO_URL}" "${TARGET_DIR}"
+echo "Cloning SpecFlow into ./${TARGET_DIR} (runtime files only)..."
+git clone --filter=blob:none --no-checkout "${REPO_URL}" "${TARGET_DIR}"
+
+runtime_paths=()
+while IFS= read -r line; do
+  line="${line%%#*}"
+  line="$(printf '%s' "${line}" | tr -d '[:space:]')"
+  [[ -z "${line}" ]] && continue
+  runtime_paths+=("${line}")
+done < <(git -C "${TARGET_DIR}" show HEAD:tooling/runtime-paths.txt)
+if [[ ${#runtime_paths[@]} -eq 0 ]]; then
+  echo "Error: tooling/runtime-paths.txt lists no runtime paths." >&2
+  exit 1
+fi
+
+git -C "${TARGET_DIR}" sparse-checkout init --cone
+git -C "${TARGET_DIR}" sparse-checkout set "${runtime_paths[@]}"
+git -C "${TARGET_DIR}" checkout
+
+platform="$(platform_suffix)"
+printf '%s\n' "${platform}" > "${TARGET_DIR}/tooling/platforms.txt"
 
 echo "Adding ignore entries to .gitignore..."
 for entry in "${IGNORE_ENTRIES[@]}"; do
@@ -119,7 +139,7 @@ for entry in "${IGNORE_ENTRIES[@]}"; do
 done
 
 echo "Installing local specFlow binaries..."
-bash "${TARGET_DIR}/tooling/scripts/pull_with_release.sh"
+bash "${TARGET_DIR}/tooling/scripts/pull_with_release.sh" --current-only
 
 suffix="$(platform_suffix)"
 specflowctl="${TARGET_DIR}/tooling/bin/specflowctl-${suffix}"

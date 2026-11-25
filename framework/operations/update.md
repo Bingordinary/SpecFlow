@@ -63,7 +63,9 @@ This script:
 - Downloads matching tooling binaries
 - Installs hook files to the project root
 
-By default the script downloads binaries for all platforms. If `specflow/tooling/platforms.txt` exists, only the platforms listed there are downloaded. The file is a user-owned local preference (inside the git-ignored `specflow/` directory). Do not create or edit this file during the update.
+The script downloads the platforms recorded in `specflow/tooling/platforms.txt`; the installer records the current platform there. If the project directory is synced across machines, the user adds the other platforms, one per line. If the file is missing, the script downloads all platforms. The pull requires the current platform's binary: when the file exists and does not list the current platform, it stops before changing `tooling/bin`; the user must add the platform or run the pull with `--all`. The file is a user-owned local preference (inside the git-ignored `specflow/` directory); the agent must not create or edit it during the update.
+
+The same pull re-applies the runtime sparse checkout declared in `specflow/tooling/runtime-paths.txt`, so a runtime directory added by a new version is materialized without restoring development-only paths.
 
 Do not read the script's shell implementation. Execute it as-is.
 

@@ -1,7 +1,8 @@
 param(
     [switch]$Help,
     [switch]$All,
-    [switch]$CurrentOnly
+    [switch]$CurrentOnly,
+    [switch]$RequireCurrent
 )
 
 Set-StrictMode -Version Latest
@@ -9,25 +10,23 @@ $ErrorActionPreference = "Stop"
 
 function Show-Usage {
     [Console]::Error.WriteLine(@"
-Usage: update_tooling_binaries.ps1 [-All] [-CurrentOnly]
+Usage: update_tooling_binaries.ps1 [-All] [-CurrentOnly] [-RequireCurrent]
 
 Download and install specflowctl binaries that match the current
 tooling source fingerprint from the matching GitHub Release.
 
-By default downloads binaries for all platforms (linux-amd64, linux-arm64,
-darwin-amd64, darwin-arm64, windows-amd64.exe, windows-arm64.exe) so a
-Syncthing-synced project directory stays usable on every platform.
-
-If tooling/platforms.txt exists, only the platforms listed there are
-downloaded (one per line, '#' comments allowed, the 'windows-*.exe'
-suffix is optional). The file is a local per-checkout preference: it
-lives inside the SpecFlow checkout, is not committed, and survives
-pulls. A missing file or an explicit -All / -CurrentOnly flag falls
-back to the default behavior (all platforms).
+By default reads tooling/platforms.txt and downloads the platforms listed
+there (one per line, '#' comments allowed, the 'windows-*.exe' suffix is
+optional). When the file is missing, downloads all platforms (linux-amd64,
+linux-arm64, darwin-amd64, darwin-arm64, windows-amd64.exe,
+windows-arm64.exe). The file is a local per-checkout preference: it lives
+inside the SpecFlow checkout, is not committed, and survives pulls. An
+explicit -All or -CurrentOnly flag overrides the file.
 
 Options:
-  -All            Download all platforms (default)
-  -CurrentOnly    Download only the current platform's binary
+  -All              Download all platforms
+  -CurrentOnly      Download only the current platform's binary
+  -RequireCurrent   Fail when the current platform is not in the selected set
 
 For platform sets, the script downloads SHA256SUMS from the requested release
 before checking the local binaries. If any required binary is missing or
@@ -188,6 +187,24 @@ if not exist "%specflowctl_target%" (
 
     $windowsPath = Join-Path $BinDir "specflowctl.cmd"
     [System.IO.File]::WriteAllText($windowsPath, ($windowsLauncher -replace "`r`n", "`n"))
+}
+
+function Remove-StaleBinaries {
+    param(
+        [string]$BinDir,
+        [string[]]$Suffixes
+    )
+
+    if (-not (Test-Path -LiteralPath $BinDir -PathType Container)) {
+        return
+    }
+    foreach ($file in Get-ChildItem -LiteralPath $BinDir -File -ErrorAction SilentlyContinue) {
+        if ($file.Name -notlike "specflowctl-*") { continue }
+        $suffix = $file.Name -replace '^specflowctl-', ''
+        if ($Suffixes -cnotcontains $suffix) {
+            Remove-Item -LiteralPath $file.FullName -Force
+        }
+    }
 }
 
 function Read-BinaryFingerprint {
@@ -355,13 +372,22 @@ try {
             throw "$platformsFile exists but lists no platform."
         }
         Write-Host "Platform set from ${platformsFile}: $($targetSuffixes -join ', ')"
-        try {
+        if ($RequireCurrent) {
             $currentCanonical = (Get-PlatformSuffix) -replace '\.exe$', ''
             $configuredCanonical = $targetSuffixes | ForEach-Object { $_ -replace '\.exe$', '' }
             if ($configuredCanonical -cnotcontains $currentCanonical) {
-                [Console]::Error.WriteLine("Warning: current platform ($currentCanonical) is not listed in $platformsFile; no binary for this machine will be installed.")
+                throw "Current platform ($currentCanonical) is not listed in $platformsFile; add it or run with -All."
             }
-        } catch { }
+        }
+        else {
+            try {
+                $currentCanonical = (Get-PlatformSuffix) -replace '\.exe$', ''
+                $configuredCanonical = $targetSuffixes | ForEach-Object { $_ -replace '\.exe$', '' }
+                if ($configuredCanonical -cnotcontains $currentCanonical) {
+                    [Console]::Error.WriteLine("Warning: current platform ($currentCanonical) is not listed in $platformsFile; no binary for this machine will be installed.")
+                }
+            } catch { }
+        }
     }
 
     if ($downloadAll) {
@@ -387,6 +413,7 @@ try {
         if (-not (Test-NeedsDownloadAll (Join-Path $downloadDir "SHA256SUMS") $binDir $allSuffixes)) {
             Move-Item -LiteralPath (Join-Path $downloadDir "SHA256SUMS") -Destination (Join-Path $binDir "SHA256SUMS") -Force
             Write-Launchers -BinDir $binDir
+            Remove-StaleBinaries -BinDir $binDir -Suffixes $allSuffixes
             if ($useConfiguredSet) {
                 Write-Host "Local binaries already match $tag ($($allSuffixes.Count) platforms: $($allSuffixes -join ', '))."
             }
@@ -418,6 +445,7 @@ try {
         Move-Item -LiteralPath (Join-Path $downloadDir "SHA256SUMS") -Destination (Join-Path $binDir "SHA256SUMS") -Force
 
         Write-Launchers -BinDir $binDir
+        Remove-StaleBinaries -BinDir $binDir -Suffixes $allSuffixes
         Write-Host "Installed $($allNames.Count) binaries and SHA256SUMS from $tag."
         exit 0
     }

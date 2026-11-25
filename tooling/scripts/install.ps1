@@ -14,7 +14,8 @@ function Show-Usage {
 Usage: install.ps1
 
 Run from the root of the repository that should adopt specFlow.
-The installer clones SpecFlow into ./specflow, adds ignore entries
+The installer clones SpecFlow into ./specflow with a partial, sparse checkout
+(runtime directories only), adds ignore entries
 (specflow/, build caches, tool configs) to .gitignore,
 installs the current platform's local binaries, and runs specflowctl init.
 "@)
@@ -148,8 +149,26 @@ if (Test-Path -LiteralPath $TargetDir) {
     throw "./$TargetDir already exists. This installer is only for first-time setup. Use $TargetDir/tooling/scripts/pull_with_release.ps1 for an existing specFlow checkout."
 }
 
-Write-Host "Cloning SpecFlow into ./$TargetDir..."
-Invoke-CheckedNative "git" @("clone", $RepoUrl, $TargetDir)
+Write-Host "Cloning SpecFlow into ./$TargetDir (runtime files only)..."
+Invoke-CheckedNative "git" @("clone", "--filter=blob:none", "--no-checkout", $RepoUrl, $TargetDir)
+
+$runtimePathsText = Invoke-CheckedOutput "git" @("-C", $TargetDir, "show", "HEAD:tooling/runtime-paths.txt")
+$runtimePaths = @()
+foreach ($line in ($runtimePathsText -split "`n")) {
+    $line = ($line -split "#", 2)[0].Trim()
+    if ($line -eq "") { continue }
+    $runtimePaths += $line
+}
+if ($runtimePaths.Count -eq 0) {
+    throw "tooling/runtime-paths.txt lists no runtime paths."
+}
+
+Invoke-CheckedNative "git" @("-C", $TargetDir, "sparse-checkout", "init", "--cone")
+Invoke-CheckedNative "git" (@("-C", $TargetDir, "sparse-checkout", "set") + $runtimePaths)
+Invoke-CheckedNative "git" @("-C", $TargetDir, "checkout")
+
+$platform = Get-PlatformSuffix
+Set-Content -LiteralPath (Join-Path $TargetDir "tooling/platforms.txt") -Value $platform -Encoding ASCII
 
 Write-Host "Adding ignore entries to .gitignore..."
 foreach ($entry in $IgnoreEntries) {
@@ -158,7 +177,7 @@ foreach ($entry in $IgnoreEntries) {
 
 Write-Host "Installing local specFlow binaries..."
 $pullScript = Join-Path $TargetDir "tooling/scripts/pull_with_release.ps1"
-& $pullScript
+& $pullScript -CurrentOnly
 if ($LASTEXITCODE -ne 0) {
     throw "Command failed: $pullScript"
 }

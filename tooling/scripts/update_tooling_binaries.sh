@@ -3,25 +3,23 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'USAGE'
-Usage: update_tooling_binaries.sh [--all] [--current-only]
+Usage: update_tooling_binaries.sh [--all] [--current-only] [--require-current]
 
 Download and install specflowctl binaries that match the current
 tooling source fingerprint from the matching GitHub Release.
 
-By default downloads binaries for all platforms (linux-amd64, linux-arm64,
-darwin-amd64, darwin-arm64, windows-amd64.exe, windows-arm64.exe) so a
-Syncthing-synced project directory stays usable on every platform.
-
-If tooling/platforms.txt exists, only the platforms listed there are
-downloaded (one per line, '#' comments allowed, the 'windows-*.exe'
-suffix is optional). The file is a local per-checkout preference: it
-lives inside the SpecFlow checkout, is not committed, and survives
-pulls. A missing file or an explicit --all / --current-only flag falls
-back to the default behavior (all platforms).
+By default reads tooling/platforms.txt and downloads the platforms listed
+there (one per line, '#' comments allowed, the 'windows-*.exe' suffix is
+optional). When the file is missing, downloads all platforms (linux-amd64,
+linux-arm64, darwin-amd64, darwin-arm64, windows-amd64.exe,
+windows-arm64.exe). The file is a local per-checkout preference: it lives
+inside the SpecFlow checkout, is not committed, and survives pulls. An
+explicit --all or --current-only flag overrides the file.
 
 Options:
-  --all            Download all platforms (default)
-  --current-only   Download only the current platform's binary
+  --all              Download all platforms
+  --current-only     Download only the current platform's binary
+  --require-current  Fail when the current platform is not in the selected set
 
 For platform sets, the script downloads SHA256SUMS from the requested release
 before checking the local binaries. If any required binary is missing or
@@ -32,6 +30,7 @@ USAGE
 MODE="all"
 SEEN_ALL=0
 SEEN_CURRENT=0
+REQUIRE_CURRENT=0
 for arg in "$@"; do
   case "${arg}" in
     -h|--help)
@@ -45,6 +44,9 @@ for arg in "$@"; do
     --current-only)
       MODE="current"
       SEEN_CURRENT=1
+      ;;
+    --require-current)
+      REQUIRE_CURRENT=1
       ;;
     *)
       usage
@@ -156,19 +158,34 @@ resolve_target_suffixes() {
   return 0
 }
 
-warn_current_platform_excluded() {
-  local current_suffix suffix listed=0
+current_platform_excluded() {
+  local current_suffix suffix
   current_suffix="$(platform_suffix 2>/dev/null || true)"
-  [[ -z "${current_suffix}" ]] && return 0
+  [[ -z "${current_suffix}" ]] && return 1
   for suffix in "${TARGET_SUFFIXES[@]}"; do
     if [[ "${suffix}" == "${current_suffix}" ]]; then
-      listed=1
-      break
+      return 1
     fi
   done
-  if [[ "${listed}" == "0" ]]; then
-    echo "Warning: current platform (${current_suffix}) is not listed in ${PLATFORMS_FILE}; no binary for this machine will be installed." >&2
-  fi
+  return 0
+}
+
+prune_stale_binaries() {
+  local path name suffix keep
+  for path in "${BIN_DIR}"/specflowctl-*; do
+    [[ -f "${path}" ]] || continue
+    name="$(basename "${path}")"
+    keep=0
+    for suffix in "${TARGET_SUFFIXES[@]}"; do
+      if [[ "${name}" == "specflowctl-${suffix}" ]]; then
+        keep=1
+        break
+      fi
+    done
+    if [[ "${keep}" == "0" ]]; then
+      rm -f "${path}"
+    fi
+  done
 }
 
 write_launchers() {
@@ -325,7 +342,13 @@ resolve_target_suffixes || exit 1
 
 if [[ "${CONFIGURED_SET}" == "1" ]]; then
   echo "Platform set from ${PLATFORMS_FILE}: ${TARGET_SUFFIXES[*]}"
-  warn_current_platform_excluded
+  if current_platform_excluded; then
+    if [[ "${REQUIRE_CURRENT}" == "1" ]]; then
+      echo "Error: current platform ($(platform_suffix)) is not listed in ${PLATFORMS_FILE}; add it or run with --all." >&2
+      exit 1
+    fi
+    echo "Warning: current platform ($(platform_suffix)) is not listed in ${PLATFORMS_FILE}; no binary for this machine will be installed." >&2
+  fi
 fi
 
 cd "${REPO_ROOT}"
@@ -364,6 +387,7 @@ if [[ "${MODE}" == "all" ]]; then
   if ! needs_download_all "${download_dir}/SHA256SUMS" "${all_suffixes[@]}"; then
     mv "${download_dir}/SHA256SUMS" "${BIN_DIR}/SHA256SUMS"
     write_launchers
+    prune_stale_binaries
     if [[ "${CONFIGURED_SET}" == "1" ]]; then
       echo "Local binaries already match ${tag} (${#all_suffixes[@]} platforms: ${all_suffixes[*]})."
     else
@@ -392,6 +416,7 @@ if [[ "${MODE}" == "all" ]]; then
   mv "${download_dir}/SHA256SUMS" "${BIN_DIR}/SHA256SUMS"
 
   write_launchers
+  prune_stale_binaries
   echo "Installed ${#all_names[@]} binaries and SHA256SUMS from ${tag}."
   exit 0
 fi

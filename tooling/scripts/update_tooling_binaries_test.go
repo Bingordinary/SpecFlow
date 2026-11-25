@@ -83,7 +83,7 @@ func TestUpdateToolingBinariesReleaseIdentity(t *testing.T) {
 				"changed_release_cross_only", "same_release_reuse", "native_and_cross",
 				"corrupt_cached_binary", "cleared_cache", "manifest_unavailable", "tag_unavailable",
 				"missing_checksum_entry", "duplicate_checksum_entry", "corrupt_download",
-				"explicit_all", "current_only_reuse",
+				"explicit_all", "current_only_reuse", "require_current_excluded",
 			} {
 				t.Run(scenario, func(t *testing.T) {
 					root := t.TempDir()
@@ -114,6 +114,9 @@ func TestUpdateToolingBinariesReleaseIdentity(t *testing.T) {
 						} else if scenario == "current_only_reuse" {
 							cached[name], desired[name] = helperBytes, helperBytes
 						}
+					}
+					if scenario == "require_current_excluded" {
+						cached["specflowctl-"+native] = []byte("old current-platform binary")
 					}
 					localSums := releaseTestSums(cached)
 					if scenario == "corrupt_cached_binary" {
@@ -168,6 +171,8 @@ func TestUpdateToolingBinariesReleaseIdentity(t *testing.T) {
 							body += " -All"
 						} else if scenario == "current_only_reuse" {
 							body += " -CurrentOnly"
+						} else if scenario == "require_current_excluded" {
+							body += " -RequireCurrent"
 						}
 						writeReleaseTestFile(t, wrapper, []byte(body+"\n"), 0600)
 						args = []string{"-NoProfile", "-File", wrapper}
@@ -175,6 +180,8 @@ func TestUpdateToolingBinariesReleaseIdentity(t *testing.T) {
 						args = append(args, "--all")
 					} else if scenario == "current_only_reuse" {
 						args = append(args, "--current-only")
+					} else if scenario == "require_current_excluded" {
+						args = append(args, "--require-current")
 					}
 					cmd := exec.Command(runnerPath, args...)
 					cmd.Dir = root
@@ -186,7 +193,7 @@ func TestUpdateToolingBinariesReleaseIdentity(t *testing.T) {
 						cmd.Env = append(cmd.Env, "TEST_MISSING_TAG=1")
 					}
 					output, runErr := cmd.CombinedOutput()
-					wantFailure := strings.Contains(scenario, "unavailable") || strings.Contains(scenario, "checksum_entry") || scenario == "corrupt_download"
+					wantFailure := strings.Contains(scenario, "unavailable") || strings.Contains(scenario, "checksum_entry") || scenario == "corrupt_download" || scenario == "require_current_excluded"
 					if (runErr != nil) != wantFailure {
 						t.Fatalf("unexpected outcome: %v\n%s", runErr, output)
 					}
@@ -200,6 +207,13 @@ func TestUpdateToolingBinariesReleaseIdentity(t *testing.T) {
 						actual, err := os.ReadFile(filepath.Join(binDir, name))
 						if err != nil || string(actual) != string(want) {
 							t.Fatalf("binary %s: err=%v; requested release bytes not installed, or failure changed cache", name, err)
+						}
+					}
+					if scenario == "require_current_excluded" {
+						nativeName := "specflowctl-" + native
+						actual, err := os.ReadFile(filepath.Join(binDir, nativeName))
+						if err != nil || string(actual) != string(cached[nativeName]) {
+							t.Fatalf("current-platform binary %s was changed on a rejected update: %v", nativeName, err)
 						}
 					}
 					actualSums, err := os.ReadFile(filepath.Join(binDir, "SHA256SUMS"))
@@ -219,7 +233,7 @@ func TestUpdateToolingBinariesReleaseIdentity(t *testing.T) {
 						if info.ModTime().Unix() != 946684800 {
 							t.Fatal("matching binary was replaced")
 						}
-					} else if scenario == "current_only_reuse" || scenario == "tag_unavailable" {
+					} else if scenario == "current_only_reuse" || scenario == "tag_unavailable" || scenario == "require_current_excluded" {
 						if len(requests) != 0 {
 							t.Fatalf("unexpected release request: %s", requests)
 						}

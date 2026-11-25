@@ -18,10 +18,12 @@ irm https://raw.githubusercontent.com/Bingordinary/SpecFlow/main/tooling/scripts
 
 The installer:
 
-1. Clones the specFlow repository into `./specflow/`
+1. Clones the specFlow repository into `./specflow/` with a partial, sparse checkout: the runtime directories (`framework/`, `hooks/`, `templates/`, `tooling/`) and tracked root-level files are written to disk; development-only directories such as `assets/`, `.github/`, `docs/`, and `reference/` are not checked out, and historical file contents are not downloaded.
 2. Adds ignore entries (`specflow/`, build caches, tool configs) to `.gitignore`
-3. Installs the current platform's `specflowctl` binary and `SHA256SUMS`
+3. Installs the current platform's `specflowctl` binary and `SHA256SUMS`, and records that platform in `specflow/tooling/platforms.txt` so later updates keep the same platform set. Add one platform per line if the project directory is synced across machines. Each machine that pulls must list its own platform; otherwise the pull stops before replacing `tooling/bin`.
 4. Runs `specflowctl init` — installs framework files and platform hooks
+
+The installer requires Git 2.25 or newer for sparse checkout.
 
 After installation, platform hooks will automatically inject the specFlow session bootstrap into the agent context at every session start.
 

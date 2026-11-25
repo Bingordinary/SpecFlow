@@ -6,12 +6,17 @@ usage() {
 Usage: pull_with_release.sh [--all] [--current-only]
 
 Pull the current SpecFlow branch from origin.
-Then run update_tooling_binaries.sh to make sure specflowctl binaries
-match the pulled tooling source fingerprint. By default downloads all
-platforms so a Syncthing-synced directory stays usable on every machine.
+Re-applies the runtime sparse checkout and then runs
+update_tooling_binaries.sh to make sure specflowctl binaries
+match the pulled tooling source fingerprint. Downloads the
+platforms recorded in tooling/platforms.txt; when that file is
+missing, downloads all platforms. --all and --current-only
+override the file. The current platform must be included: when
+tooling/platforms.txt exists and does not list it, the pull stops
+before replacing tooling/bin.
 
 Options:
-  --all            Download all platforms (default)
+  --all            Download all platforms
   --current-only   Download only the current platform's binary
 USAGE
 }
@@ -44,6 +49,12 @@ if [[ "${SEEN_ALL}" == "1" && "${SEEN_CURRENT}" == "1" ]]; then
   echo "Error: --all and --current-only are mutually exclusive." >&2
   exit 1
 fi
+
+# The pull always needs the current platform's binary to run
+# specflowctl init at the end. The update script validates this before it
+# downloads or installs anything, so a platform-list mismatch leaves the
+# previous working binaries in place.
+UPDATE_ARGS+=("--require-current")
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -106,15 +117,30 @@ else
   git reset --hard "origin/${branch}"
 fi
 
-# Clear tooling/bin before updating binaries, so stale files are
-# removed before fresh ones are downloaded.
-BIN_DIR="${REPO_ROOT}/tooling/bin"
-if [[ -d "${BIN_DIR}" ]]; then
-  rm -rf "${BIN_DIR}"
-  echo "Cleared tooling/bin."
+# Re-apply the runtime checkout set against the pulled version, so a new
+# runtime directory is materialized and development-only paths stay absent.
+runtime_paths_file="${REPO_ROOT}/tooling/runtime-paths.txt"
+if [[ ! -f "${runtime_paths_file}" ]]; then
+  echo "Error: ${runtime_paths_file} is missing from the pulled checkout." >&2
+  exit 1
 fi
+runtime_paths=()
+while IFS= read -r line; do
+  line="${line%%#*}"
+  line="$(printf '%s' "${line}" | tr -d '[:space:]')"
+  [[ -z "${line}" ]] && continue
+  runtime_paths+=("${line}")
+done < "${runtime_paths_file}"
+if [[ ${#runtime_paths[@]} -eq 0 ]]; then
+  echo "Error: tooling/runtime-paths.txt lists no runtime paths." >&2
+  exit 1
+fi
+git sparse-checkout init --cone
+git sparse-checkout set "${runtime_paths[@]}"
 
-# Delegate binary update to the standalone script (defaults to all platforms).
+# Do not clear tooling/bin here. The update script installs new binaries
+# only after the release assets are verified, and a failed update must leave
+# the previous working binaries in place.
 "${SCRIPT_DIR}/update_tooling_binaries.sh" ${UPDATE_ARGS[@]:+"${UPDATE_ARGS[@]}"}
 
 # Install hook files from specflow source to project root. The CLI owns the
@@ -125,6 +151,7 @@ suffix="$(platform_suffix)"
 specflowctl="${REPO_ROOT}/tooling/bin/specflowctl-${suffix}"
 if [[ ! -x "${specflowctl}" ]]; then
   echo "Error: expected binary was not installed: ${specflowctl}" >&2
+  echo "Add the current platform to specflow/tooling/platforms.txt or run this script with --all." >&2
   exit 1
 fi
 "${specflowctl}" init --hooks-only --repo-root "${PROJECT_ROOT}"

@@ -395,6 +395,114 @@ func TestCheckProjectInitSkipsFrameworkModeItems(t *testing.T) {
 	}
 }
 
+func TestRuntimePathsManifest(t *testing.T) {
+	repoRoot := findRepositoryRoot(t)
+	paths := readRuntimePathsForTest(t, filepath.Join(repoRoot, "tooling", "runtime-paths.txt"))
+	want := []string{"framework", "hooks", "templates", "tooling"}
+	if strings.Join(paths, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("runtime paths = %v, want %v", paths, want)
+	}
+	for _, path := range paths {
+		info, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatalf("runtime path %q is not accessible: %v", path, err)
+		}
+		if !info.IsDir() {
+			t.Fatalf("runtime path %q is not a directory", path)
+		}
+	}
+}
+
+func TestSparseCheckoutUsesRuntimePaths(t *testing.T) {
+	repoRoot := findRepositoryRoot(t)
+	runtimePaths := readRuntimePathsForTest(t, filepath.Join(repoRoot, "tooling", "runtime-paths.txt"))
+
+	source := filepath.Join(t.TempDir(), "source")
+	mustWriteFile(t, filepath.Join(source, "framework", "concepts.md"), "bootstrap\n")
+	mustWriteFile(t, filepath.Join(source, "hooks", "session-start"), "hook\n")
+	mustWriteFile(t, filepath.Join(source, "templates", ".codex", "hooks.json"), "{}\n")
+	mustWriteFile(t, filepath.Join(source, "tooling", "manifest.tsv"), "template\tdestination\tframework\n")
+	mustWriteFile(t, filepath.Join(source, "tooling", "runtime-paths.txt"), strings.Join(runtimePaths, "\n")+"\n")
+	mustWriteFile(t, filepath.Join(source, "assets", "hero.png"), "image\n")
+	mustWriteFile(t, filepath.Join(source, "README.md"), "readme\n")
+
+	runGitTest(t, source, "init", "-q")
+	runGitTest(t, source, "config", "user.email", "test@example.com")
+	runGitTest(t, source, "config", "user.name", "specflow-test")
+	runGitTest(t, source, "add", ".")
+	runGitTest(t, source, "commit", "-qm", "fixture")
+
+	target := filepath.Join(t.TempDir(), "specflow")
+	runGitTest(t, "", "clone", "--no-checkout", source, target)
+	runGitTest(t, target, "sparse-checkout", "init", "--cone")
+	runGitTest(t, target, append([]string{"sparse-checkout", "set"}, runtimePaths...)...)
+	runGitTest(t, target, "checkout")
+
+	for _, path := range []string{
+		"framework/concepts.md",
+		"hooks/session-start",
+		"templates/.codex/hooks.json",
+		"tooling/manifest.tsv",
+		"README.md",
+	} {
+		if _, err := os.Stat(filepath.Join(target, filepath.FromSlash(path))); err != nil {
+			t.Fatalf("expected sparse checkout file %q: %v", path, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(target, "assets")); !os.IsNotExist(err) {
+		t.Fatalf("development-only directory assets/ was checked out")
+	}
+}
+
+func findRepositoryRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "tooling", "runtime-paths.txt")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("could not locate repository root")
+		}
+		dir = parent
+	}
+}
+
+func readRuntimePathsForTest(t *testing.T, path string) []string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) failed: %v", path, err)
+	}
+	paths := []string{}
+	for _, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
+		if line == "" {
+			continue
+		}
+		paths = append(paths, line)
+	}
+	return paths
+}
+
+func runGitTest(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, output)
+	}
+}
+
 func mustWriteFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

@@ -1,0 +1,8 @@
+# Directories checked out in an installed project.
+# Keep this list limited to files the installed framework reads at runtime.
+# The installer and pull script read this file; root-level files are included
+# automatically by Git's cone-mode sparse checkout.
+framework
+hooks
+templates
+tooling

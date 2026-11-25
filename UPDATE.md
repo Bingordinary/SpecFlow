@@ -50,7 +50,7 @@ PowerShell:
 specflow\tooling\scripts\pull_with_release.ps1
 ```
 
-The script fetches the latest specFlow source, downloads matching `specflowctl` binaries, and installs the platform hook files by running `specflowctl init --hooks-only`. It reinstalls `.opencode/plugins/specflow.js` and the other adapter files, which fixes an adapter that the previous version left broken.
+The script fetches the latest specFlow source, re-applies the runtime sparse checkout from `tooling/runtime-paths.txt`, downloads matching `specflowctl` binaries for the platforms recorded in `tooling/platforms.txt`, and installs the platform hook files by running `specflowctl init --hooks-only`. It reinstalls `.opencode/plugins/specflow.js` and the other adapter files, which fixes an adapter that the previous version left broken. The pull requires the current platform's binary; if the platform file exists and does not list it, the pull stops before replacing the binaries. Add the platform to the file or rerun with `--all`.
 
 If the script is missing or fails, refresh the checkout first, then rerun it:
 

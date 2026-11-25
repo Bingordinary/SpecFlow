@@ -12,13 +12,18 @@ function Show-Usage {
 Usage: pull_with_release.ps1 [-CurrentOnly] [-All]
 
 Pull the current SpecFlow branch from origin.
-Then run update_tooling_binaries.ps1 to make sure specflowctl binaries
-match the pulled tooling source fingerprint. By default downloads all
-platforms so a Syncthing-synced directory stays usable on every machine.
+Re-applies the runtime sparse checkout and then runs
+update_tooling_binaries.ps1 to make sure specflowctl binaries
+match the pulled tooling source fingerprint. Downloads the
+platforms recorded in tooling/platforms.txt; when that file is
+missing, downloads all platforms. -All and -CurrentOnly override
+the file. The current platform must be included: when
+tooling/platforms.txt exists and does not list it, the pull stops
+before replacing tooling/bin.
 
 Options:
   -CurrentOnly    Download only the current platform's binary
-  -All            Download all platforms (default)
+  -All            Download all platforms
 "@)
 }
 
@@ -136,16 +141,28 @@ try {
         Invoke-CheckedNative "git" @("reset", "--hard", "origin/$branch")
     }
 
-    # Clear tooling/bin before updating binaries, so stale files are
-    # removed before fresh ones are downloaded.
-    $binDir = Join-Path $repoRoot "tooling/bin"
-    if (Test-Path -LiteralPath $binDir) {
-        Remove-Item -LiteralPath $binDir -Recurse -Force
-        Write-Host "Cleared tooling/bin."
+    # Re-apply the runtime checkout set against the pulled version, so a new
+    # runtime directory is materialized and development-only paths stay absent.
+    $runtimePathsFile = Join-Path $repoRoot "tooling/runtime-paths.txt"
+    if (-not (Test-Path -LiteralPath $runtimePathsFile -PathType Leaf)) {
+        throw "tooling/runtime-paths.txt is missing from the pulled checkout."
     }
+    $runtimePaths = @()
+    foreach ($rawLine in Get-Content -LiteralPath $runtimePathsFile) {
+        $line = ($rawLine -split "#", 2)[0].Trim()
+        if ($line -eq "") { continue }
+        $runtimePaths += $line
+    }
+    if ($runtimePaths.Count -eq 0) {
+        throw "tooling/runtime-paths.txt lists no runtime paths."
+    }
+    Invoke-CheckedNative "git" @("sparse-checkout", "init", "--cone")
+    Invoke-CheckedNative "git" (@("sparse-checkout", "set") + $runtimePaths)
 
-    # Delegate binary update to the standalone script (defaults to all platforms).
-    $updateArgs = @()
+    # Do not clear tooling/bin here. The update script installs new binaries
+    # only after the release assets are verified, and a failed update must
+    # leave the previous working binaries in place.
+    $updateArgs = @("-RequireCurrent")
     if ($CurrentOnly) { $updateArgs += "-CurrentOnly" }
     elseif ($All) { $updateArgs += "-All" }
     & (Join-Path $scriptDir "update_tooling_binaries.ps1") @updateArgs
@@ -157,7 +174,7 @@ try {
     $suffix = Get-PlatformSuffix
     $specflowctl = Join-Path $repoRoot "tooling/bin/specflowctl-$suffix"
     if (-not (Test-Path -LiteralPath $specflowctl -PathType Leaf)) {
-        throw "Expected binary was not installed: $specflowctl"
+        throw "Expected binary was not installed: $specflowctl. Add the current platform to specflow/tooling/platforms.txt or run this script with -All."
     }
     Invoke-CheckedNative $specflowctl @("init", "--hooks-only", "--repo-root", $projectRoot)
     Write-Host "Hook installation complete."
