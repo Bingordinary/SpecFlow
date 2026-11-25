@@ -84,6 +84,7 @@ You rarely need to type these triggers yourself — the agent suggests them at t
 | `fresh@{scope}` | Read-only readiness and done report: gate freshness, promise closure, and the global `DONE` count |
 | `spec_flow_update` | Pulls the latest specFlow source, updates binaries and hooks, checks project format |
 | `spec_flow_version` | Checks the installed specFlow version against the remote latest and reports whether the project is up to date |
+| `issue@{n}` / `issue@{selector}` | Read-only triage of one GitHub issue or a selected set (`open`, `all`, `closed`, `label:<name>`) against the project's stable spec and code; reports a fix plan locally and never writes back to GitHub |
 
 The agent responds to explicit quality or completion signals, but never starts or repeats a gate without your confirmation.
 

@@ -361,7 +361,7 @@ A sub-agent is a zero-context, one-shot worker: it has no conversation history a
 
 1. validate (full and delta), verify alignment/quality, and final-synthesis sessions — generated missions in `framework/verification_scope.md` §Sub-agent Prompt Assembly
 2. verify Step 7 mismatch-analysis semantics — protocol in `framework/unit_verify_checklist.md` Step 7 (Sub-agent protocol)
-3. `spec_flow_issues` triage sub-agents — protocol in `framework/operations/issues.md` Step 3
+3. `spec_flow_issues` / `issue@{n|selector}` triage sub-agents — protocol in `framework/operations/issues.md` Step 3
 
 The reviewer must verify the scenario inventory is complete with a deterministic search (e.g. grep `sub-agent` / `subagent` / `launch a read-only` across `framework/`). A sub-agent scenario that exists in the framework but is not covered by this standard is a finding — the standard and the mechanism are out of sync, handled under Section 2.6 (Contract Drift) — and the affected slice must not be marked `passed`.
 
@@ -382,7 +382,7 @@ The reviewer must verify the scenario inventory is complete with a deterministic
    - Exercise A: a verify alignment mission from `gate-mission --keys ... --format prompt`
    - Exercise B: a verify quality mission from the same command
    - Exercise C: a verify alignment MISMATCH mission (the item's divergence analysis)
-   - Exercise D: a triage prompt per `framework/operations/issues.md` Step 3 (with full issue content as input)
+   - Exercise D: assemble both triage prompt variants per `framework/operations/issues.md` Step 3 — the `source_repo` variant (`framework/operations/issues.md` as the protocol path) and the `installed_project` variant (`specflow/framework/operations/issues.md` as the protocol path, with the installed evidence roots) — and check each against the seven checkpoints, with full issue content as input
    - Exercise E: a validate session mission (unit or rule target) and a final-synthesis mission after accepted dependencies
    - Each exercise uses a distinct fixture so a static example cannot confirm itself.
 3. **Escalation (optional)** — when a checkpoint is in doubt on a produced mission or prompt, hand the product to an independent executor for a trial run (analogous to `entry_robustness_probe`); record the probe method and whether the executor could start work without guessing.
@@ -528,7 +528,7 @@ Local slices review one owner area for internal closure, side effects, contract 
     - verifies that each command package named by the routing table is self-contained for its phase per Section 2.11 (progressive disclosure: entry routing inline, phase procedure in the package)
     - verifies that local slice conclusions did not rely on prior conversation, ordinary term meanings, hidden layout assumptions, or avoidable repeated reading
 10. `sub_agent_prompt_assembly`
-    - reviews the sub-agent mission standards: `verification_scope.md` (§Sub-agent Prompt Assembly — generated gate missions and the session report contract), the mission generator and report contract (`tooling/cmd/specflowctl/gate_mission.go`, `tooling/cmd/specflowctl/gate_report_contract.go`), `unit_validate_checklist.md` (10-check protocol), `rule_validate_checklist.md` (rule protocol), `unit_verify_checklist.md` (alignment + quality lens protocol), `operations/issues.md` (Step 3), and their referenced checklists
+    - reviews the sub-agent mission standards: `verification_scope.md` (§Sub-agent Prompt Assembly — generated gate missions and the session report contract), the mission generator and report contract (`tooling/cmd/specflowctl/gate_mission.go`, `tooling/cmd/specflowctl/gate_report_contract.go`), `unit_validate_checklist.md` (10-check protocol), `rule_validate_checklist.md` (rule protocol), `unit_verify_checklist.md` (alignment + quality lens protocol), `operations/issues.md` (Step 3, both layouts), and their referenced checklists
     - verifies per Section 2.16: all seven checkpoints via static rule check plus a complete mission exercise (a generated mission per gate session kind and an assembled triage prompt, with text-level evidence per checkpoint)
     - verifies the scenario inventory itself is complete via deterministic search; any uncovered sub-agent scenario is a finding
     - verifies mission and assembled-prompt output contracts agree with the unified report skeleton (Section 2.6 drift)

@@ -84,6 +84,7 @@ Agent 会自动加载 specFlow 规则、发现已有真相、并引导你走完�
 | `fresh@{scope}` | 只读的就绪与完成报告：门控 freshness、promise closure、全局 `DONE` 数量 |
 | `spec_flow_update` | 拉取最新 specFlow，更新二进制和 hooks，检查项目格式 |
 | `spec_flow_version` | 检查本地 specFlow 版本并对比远程最新版本，报告项目是否最新 |
+| `issue@{n}` / `issue@{selector}` | 只读分析单个 GitHub issue 或一组 issue（`open`、`all`、`closed`、`label:<name>`），对照项目稳定规格和代码，判断问题是否真实并给出修复计划；只在本地报告，不写回 GitHub |
 
 Agent 只在你明确发出质量检查或完成信号后提出下一步，而且不会在未确认时自行运行或重跑门控。
 

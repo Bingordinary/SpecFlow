@@ -1,6 +1,6 @@
 # SpecFlow Bootstrap
 
-SpecFlow records accepted design, behavior, boundaries, and shared rules. Specs are the consensus protocol between the user and the agent: users confirm intent; agents carry it across sessions. Identify the trigger, resolve mode/target, then read its route. If unclear, stop and ask.
+SpecFlow records accepted design, behavior, boundaries, and shared rules. Specs are the consensus protocol between the user and the agent: users confirm intent; agents carry it across sessions. Identify the trigger, resolve mode/target, then read its route. If unclear, ask.
 
 Normal user-triggered paths:
 
@@ -9,9 +9,9 @@ Normal user-triggered paths:
 
 ## State Model
 
-**File existence is state.** Neither file: create the candidate. Stable only: fork before editing. Both: edit candidate; leave stable unchanged. Candidate only: keep editing it. Promote only after applicable gates pass and the user confirms. Deletion is an ordinary file edit: delete the candidate file (and, to retire a whole unit or rule, its stable file too). There is no separate removal command or workflow, and no deletion approval protocol.
+**File existence is state.** Neither file: create the candidate. Stable only: fork before editing. Both: edit candidate; leave stable unchanged. Candidate only: keep editing it. Promote only after applicable gates pass and the user confirms. Deletion is an ordinary file edit: delete the candidate file (and, to retire a whole unit or rule, its stable file too). No separate removal command or approval protocol.
 
-Units (one independently governed engineering responsibility) live under `docs/specs/units/{stable,candidate}/`; rules (reusable shared constraints) under `docs/specs/rules/{stable,candidate}/`. **Stable** is accepted truth. **Candidate** is proposed truth and the normal editable layer. Stable changes use promote — a **mirror publication**: for the promoted unit the stable file set becomes the candidate file set, so an evidence record the candidate round dropped is removed on promote once it is declared with `--drop-evidence` — except the documented `spec_flow_update` update exception. Caches: `docs/specs/meta/validation/` (`framework/validation_cache.md`).
+Units (one independently governed engineering responsibility) live under `docs/specs/units/{stable,candidate}/`; rules (reusable shared constraints) under `docs/specs/rules/{stable,candidate}/`. **Stable** is accepted truth. **Candidate** is proposed truth and the normal editable layer. Stable changes use promote — a **mirror publication**: for the promoted unit the stable file set becomes the candidate file set, so an evidence record the candidate round dropped is removed on promote once it is declared with `--drop-evidence` — except the documented `spec_flow_update` update exception. Caches: `docs/specs/meta/validation/`.
 
 Code is observed behavior, candidate is proposed intent, stable is prior agreement. None wins automatically. During `verify`, present divergence and let the user decide.
 
@@ -21,7 +21,7 @@ Outside `verify`: stable only = recorded truth; both = name the layer, never jus
 
 Read-only requests remain read-only. Without a gate trigger, continue the requested discussion/editing without suggesting spec operations or exposing cache state. "Assume editing" selects a workflow, not write permission (`framework/agent_suggestion_rules.md`).
 
-For a unit, run `specflowctl next --unit <name>`. For a rule, inspect exact stable and candidate paths.
+For a unit, run `specflowctl next --unit <name>`. For a rule, inspect stable and candidate paths.
 
 Before editing:
 
@@ -35,7 +35,7 @@ Do not gate before editing. Read, then write. For "only change X" / "do not touc
 
 ## Trigger Routing
 
-Resolve mode, then read the target row and its required packages.
+Resolve mode, then read the target row and packages.
 
 | Trigger | First action and required packages |
 |---|---|
@@ -51,6 +51,7 @@ Resolve mode, then read the target row and its required packages.
 | `deps@all` / `deps@{unit}` / `deps@{rule}` | Run read-only `specflowctl deps`; use `framework/verification_scope.md`. |
 | `spec_flow_update` | Follow `framework/operations/update.md`; only its update procedure may edit stable structure. |
 | `spec_flow_version` | Follow `framework/operations/version.md`. |
+| `issue@{n}` / `issue@{selector}` | Follow `framework/operations/issues.md`. |
 | Design, quality-check, code-review, or completion signal | Read `framework/agent_suggestion_rules.md` before responding. |
 | Adoption intent ("把这几个模块登记一下" / "继续建档") | Follow `framework/operations/adopt.md`. |
 | Bounded-task wording | Follow `framework/operations/operation_scope.md` before editing. |

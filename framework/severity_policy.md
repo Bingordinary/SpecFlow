@@ -178,7 +178,7 @@ It is distinct from existence validation (cross-check). Existence validation dec
 
 ### 9.2 Scope
 
-This check applies to every flow whose severity grading is part of a finding contract, where the grading takes effect on a gate outcome, cache content, or the flow's final output. Each such flow defines where the check executes inside its own procedure file and references this section; that definition is the only adoption mechanism. Report-priority grading outside a finding contract (e.g. the `spec_flow_issues` triage severity) is not in scope.
+This check applies to every flow whose severity grading is part of a finding contract, where the grading takes effect on a gate outcome, cache content, or the flow's final output. Each such flow defines where the check executes inside its own procedure file and references this section; that definition is the only adoption mechanism. Report-priority grading outside a finding contract (e.g. the `spec_flow_issues` / `issue@{n|selector}` triage severity) is not in scope.
 
 Coverage is decided by the first paragraph: a flow is in scope when its severity grading is part of a finding contract, and its execution position is wherever its own procedure file places this check. This section defines the shared meaning, boundaries, and evidence rules.
 

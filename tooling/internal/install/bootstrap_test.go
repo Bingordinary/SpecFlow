@@ -42,6 +42,8 @@ var bootstrapGoldenTriggers = []string{
 	"deps@{rule}",
 	"spec_flow_update",
 	"spec_flow_version",
+	"issue@{n}",
+	"issue@{selector}",
 }
 
 // The bootstrap payload budget (framework/hooks.md §Bootstrap Contract): the
@@ -232,6 +234,8 @@ func TestBootstrapRoutingSemantics(t *testing.T) {
 	assertRoute("reverify@{unit}", []string{"all items", "including carried", "delta run", "--inputs-file", "framework/verification_scope.md", "framework/unit_verify_checklist.md", "framework/shared_judgments.md"}, nil)
 	assertRoute("promote@{target}", []string{"specflowctl resolve --target {target}", "framework/unit_promote_workflow.md", "framework/rule_promote_workflow.md", "applicable gates only"}, nil)
 	assertRoute("fresh@{target}", []string{"For `{target}`, resolve via `framework/commands.md`", "`specflowctl fresh`", "framework/validation_cache.md"}, nil)
+	assertRoute("issue@{n}", []string{"framework/operations/issues.md"}, nil)
+	assertRoute("issue@{selector}", []string{"framework/operations/issues.md"}, nil)
 
 	for _, metaTrigger := range []string{"`spec_flow_review`", "`spec_flow_review:full`", "`spec_flow_design_review`"} {
 		if strings.Contains(section, metaTrigger) {
